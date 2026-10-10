@@ -21,6 +21,7 @@ type UserRole = Database["public"]["Enums"]["user_role"];
 
 const ROLES: { value: UserRole; label: string }[] = [
   { value: "garcom", label: "Garçom" },
+  { value: "operador_poker", label: "Operador de torneio" },
   { value: "admin", label: "Admin" },
 ];
 
