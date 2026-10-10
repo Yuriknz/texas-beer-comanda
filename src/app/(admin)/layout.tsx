@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: "/admin/mesas", label: "Mesas" },
   { href: "/admin/usuarios", label: "Usuários" },
   { href: "/admin/notas-fiscais", label: "Notas fiscais" },
+  { href: "/torneios", label: "Torneios" },
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
