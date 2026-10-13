@@ -7,6 +7,7 @@ const SECOES = [
   { href: "/admin/mesas", titulo: "Mesas", descricao: "Cadastrar e remover mesas do salão." },
   { href: "/admin/usuarios", titulo: "Usuários", descricao: "Criar contas, ajustar role e ativar/desativar." },
   { href: "/admin/notas-fiscais", titulo: "Notas fiscais", descricao: "Acompanhar e reemitir NFC-e pendentes." },
+  { href: "/torneios", titulo: "Torneios de poker", descricao: "Buy-in, rebuy, add-on, eliminação e premiação." },
 ];
 
 export default function AdminHomePage() {
