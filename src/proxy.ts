@@ -2,6 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function proxy(request: NextRequest) {
+  // Protótipo do módulo de poker: roda com dados locais do navegador, sem
+  // login nem Supabase. Remover esta exceção quando o módulo for ligado ao banco.
+  if (request.nextUrl.pathname.startsWith("/poker")) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
