@@ -29,7 +29,7 @@ const TEXTOS = {
     sucesso: "Cacife lançado",
   },
   devolucao: {
-    gatilho: "Devolução de fichas",
+    gatilho: "Devolução",
     titulo: "Devolução de fichas",
     descricao: "Fichas devolvidas pelo jogador. O valor entra como crédito na conta.",
     confirmar: "Lançar devolução",

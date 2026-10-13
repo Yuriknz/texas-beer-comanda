@@ -124,7 +124,7 @@ export function CaixaMovimentoDialog({ tipo }: { tipo: keyof typeof MOVIMENTO })
       return;
     }
     setOpen(false);
-    toast.success(`${textos.titulo} de ${formatCurrency(numero)} registrado${tipo === "sangria" ? "a" : ""}.`);
+    toast.success(`${textos.titulo} de ${formatCurrency(numero)} ${tipo === "sangria" ? "registrada" : "registrado"}.`);
   }
 
   return (

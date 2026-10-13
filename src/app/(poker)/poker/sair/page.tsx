@@ -52,7 +52,9 @@ export default function SairPage() {
             Entrar
           </Button>
         </form>
-        <p className="text-xs text-muted-foreground">Senha de demonstração: 1234</p>
+        {state.senha === "1234" && (
+          <p className="text-xs text-muted-foreground">Senha de demonstração: 1234</p>
+        )}
       </Card>
     </div>
   );

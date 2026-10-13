@@ -24,7 +24,7 @@ export function CaixaIndicador({
   return (
     <Card className={cn("gap-1 p-4", className)}>
       <span className="text-xs tracking-wide text-muted-foreground uppercase">{label}</span>
-      <span className={cn("font-money text-2xl", TOM[tom])}>{valor}</span>
+      <span className={cn("font-money text-xl sm:text-2xl", TOM[tom])}>{valor}</span>
       {detalhe && <span className="text-xs text-muted-foreground">{detalhe}</span>}
     </Card>
   );
