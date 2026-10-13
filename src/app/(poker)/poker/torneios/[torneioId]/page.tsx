@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PageTitle } from "@/components/poker/page-title";
+import { usePinGate } from "@/components/poker/pin-gate";
 import { TorneioEncerrarDialog } from "@/components/poker/torneio-encerrar-dialog";
 import { TorneioInscreverDialog } from "@/components/poker/torneio-inscrever-dialog";
 import { TorneioStatusBadge } from "@/components/poker/torneio-status-badge";
@@ -36,17 +37,14 @@ import type { Inscricao } from "@/lib/poker-demo/types";
 import { formatCurrency, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type AcaoTipo = "rebuy" | "addon" | "eliminar";
-type Acao = { tipo: AcaoTipo; jogadorId: string };
-
 const numero = new Intl.NumberFormat("pt-BR");
 
 export default function TorneioPage() {
   const { torneioId } = useParams<{ torneioId: string }>();
   const { state, actions } = usePoker();
-  // Rebuy, add-on e eliminação pedem confirmação: o lançamento de torneio não
-  // pode ser removido da conta depois, então um toque errado no tablet não tem volta.
-  const [acao, setAcao] = useState<Acao | null>(null);
+  const pedirPin = usePinGate();
+  // Eliminação pede confirmação: um toque errado no tablet muda a classificação.
+  const [eliminando, setEliminando] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
 
   const torneio = state.torneios.find((t) => t.id === torneioId);
@@ -87,32 +85,39 @@ export default function TorneioPage() {
     return (a.posicao ?? semPosicao) - (b.posicao ?? semPosicao);
   });
 
-  function pedir(tipo: AcaoTipo, jogadorId: string) {
-    setAcao({ tipo, jogadorId });
+  // Rebuy e add-on viram dívida do jogador: quem confirma é ele, com o PIN.
+  function pedirLancamento(tipo: "rebuy" | "addon", jogadorId: string) {
+    if (!torneio) return;
+    const { id, nome: nomeTorneio } = torneio;
+    const rebuy = tipo === "rebuy";
+    const valor = formatCurrency(rebuy ? torneio.rebuyValor : torneio.addonValor);
+    pedirPin({
+      jogadorId,
+      titulo: `${rebuy ? "Rebuy" : "Add-on"} — ${nomeTorneio}`,
+      detalhe: valor,
+      executar: (credencial) =>
+        rebuy
+          ? actions.registrarRebuy(id, jogadorId, credencial)
+          : actions.registrarAddon(id, jogadorId, credencial),
+      onSucesso: () =>
+        toast.success(`${rebuy ? "Rebuy" : "Add-on"} de ${nomeDe(jogadorId)}: ${valor} lançado na conta.`),
+    });
+  }
+
+  function pedirEliminacao(jogadorId: string) {
+    setEliminando(jogadorId);
     setConfirmando(true);
   }
 
-  function confirmar() {
-    if (!acao || !torneio) return;
-    const nome = nomeDe(acao.jogadorId);
-    const resultado =
-      acao.tipo === "rebuy"
-        ? actions.registrarRebuy(torneio.id, acao.jogadorId)
-        : acao.tipo === "addon"
-          ? actions.registrarAddon(torneio.id, acao.jogadorId)
-          : actions.eliminarJogador(torneio.id, acao.jogadorId);
+  function confirmarEliminacao() {
+    if (!eliminando || !torneio) return;
+    const resultado = actions.eliminarJogador(torneio.id, eliminando);
     setConfirmando(false);
     if (!resultado.ok) {
       toast.error(resultado.error);
       return;
     }
-    if (acao.tipo === "rebuy") {
-      toast.success(`Rebuy de ${nome}: ${formatCurrency(torneio.rebuyValor)} lançado na conta.`);
-    } else if (acao.tipo === "addon") {
-      toast.success(`Add-on de ${nome}: ${formatCurrency(torneio.addonValor)} lançado na conta.`);
-    } else {
-      toast.success(`${nome} eliminado.`);
-    }
+    toast.success(`${nomeDe(eliminando)} eliminado.`);
   }
 
   function iniciar() {
@@ -135,7 +140,7 @@ export default function TorneioPage() {
     { label: "Prêmio líquido", valor: formatCurrency(resumo.premioLiquido), destaque: true },
   ];
 
-  const inscricaoDaAcao = acao && torneio.inscricoes.find((i) => i.jogadorId === acao.jogadorId);
+  const inscricaoEliminando = torneio.inscricoes.find((i) => i.jogadorId === eliminando);
 
   return (
     <>
@@ -352,7 +357,7 @@ export default function TorneioPage() {
                               className="h-11 flex-1 px-3 sm:flex-none"
                               disabled={inscricao.addon}
                               title={inscricao.addon ? "Depois do add-on não há mais rebuy" : undefined}
-                              onClick={() => pedir("rebuy", inscricao.jogadorId)}
+                              onClick={() => pedirLancamento("rebuy", inscricao.jogadorId)}
                             >
                               Rebuy
                             </Button>
@@ -362,7 +367,7 @@ export default function TorneioPage() {
                               variant="outline"
                               className="h-11 flex-1 px-3 sm:flex-none"
                               disabled={inscricao.addon}
-                              onClick={() => pedir("addon", inscricao.jogadorId)}
+                              onClick={() => pedirLancamento("addon", inscricao.jogadorId)}
                             >
                               Add-on
                             </Button>
@@ -372,7 +377,7 @@ export default function TorneioPage() {
                               variant="destructive"
                               className="h-11 flex-1 px-3 sm:flex-none"
                               disabled={resumo.ativos <= 1}
-                              onClick={() => pedir("eliminar", inscricao.jogadorId)}
+                              onClick={() => pedirEliminacao(inscricao.jogadorId)}
                             >
                               Eliminar
                             </Button>
@@ -390,48 +395,21 @@ export default function TorneioPage() {
 
       <Dialog open={confirmando} onOpenChange={setConfirmando}>
         <DialogContent>
-          {acao && (
+          {eliminando && (
             <>
               <DialogHeader>
-                <DialogTitle>
-                  {acao.tipo === "rebuy" && "Registrar rebuy"}
-                  {acao.tipo === "addon" && "Registrar add-on"}
-                  {acao.tipo === "eliminar" && "Eliminar jogador"}
-                </DialogTitle>
+                <DialogTitle>Eliminar jogador</DialogTitle>
                 <DialogDescription>
-                  {acao.tipo === "rebuy" && (
-                    <>
-                      Lançar <Valor>{formatCurrency(torneio.rebuyValor)}</Valor> de rebuy na conta de{" "}
-                      <Nome>{nomeDe(acao.jogadorId)}</Nome>?
-                      {inscricaoDaAcao?.status === "eliminado" && " Ele volta para a disputa."} O lançamento
-                      não pode ser desfeito.
-                    </>
-                  )}
-                  {acao.tipo === "addon" && (
-                    <>
-                      Lançar <Valor>{formatCurrency(torneio.addonValor)}</Valor> de add-on na conta de{" "}
-                      <Nome>{nomeDe(acao.jogadorId)}</Nome>? Depois do add-on ele não pode mais fazer rebuy e
-                      o lançamento não pode ser desfeito.
-                    </>
-                  )}
-                  {acao.tipo === "eliminar" && (
-                    <>
-                      Eliminar <Nome>{nomeDe(acao.jogadorId)}</Nome> em <Valor>{resumo.ativos}º lugar</Valor>?
-                      {temRebuy && !inscricaoDaAcao?.addon && " Ele ainda pode voltar com um rebuy."}
-                    </>
-                  )}
+                  Eliminar <Nome>{nomeDe(eliminando)}</Nome> em <Valor>{resumo.ativos}º lugar</Valor>?
+                  {temRebuy && !inscricaoEliminando?.addon && " Ele ainda pode voltar com um rebuy."}
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
                 <Button variant="outline" className="h-11 px-4" onClick={() => setConfirmando(false)}>
                   Cancelar
                 </Button>
-                <Button
-                  variant={acao.tipo === "eliminar" ? "destructive" : "default"}
-                  className="h-11 px-4"
-                  onClick={confirmar}
-                >
-                  {acao.tipo === "eliminar" ? "Eliminar" : "Confirmar lançamento"}
+                <Button variant="destructive" className="h-11 px-4" onClick={confirmarEliminacao}>
+                  Eliminar
                 </Button>
               </DialogFooter>
             </>

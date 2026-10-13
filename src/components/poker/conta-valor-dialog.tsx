@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { usePinGate } from "@/components/poker/pin-gate";
 import { usePoker } from "@/lib/poker-demo/store";
 import { formatCurrency } from "@/lib/format";
 
@@ -82,16 +83,26 @@ function ValorForm({
   onConcluir: () => void;
 }) {
   const { actions } = usePoker();
+  const pedirPin = usePinGate();
   const [texto, setTexto] = useState("");
   const textos = TEXTOS[tipo];
   const valor = lerValor(texto);
 
   function confirmar(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const resultado =
-      tipo === "cacife"
-        ? actions.lancarCacife(jogadorId, valor)
-        : actions.lancarDevolucao(jogadorId, valor);
+    // cacife é dívida do jogador: sai o formulário, entra o teclado de PIN
+    if (tipo === "cacife") {
+      onConcluir();
+      pedirPin({
+        jogadorId,
+        titulo: "Cacife (fichas)",
+        detalhe: formatCurrency(valor),
+        executar: (credencial) => actions.lancarCacife(jogadorId, valor, credencial),
+        onSucesso: () => toast.success(`${textos.sucesso}: ${formatCurrency(valor)}`),
+      });
+      return;
+    }
+    const resultado = actions.lancarDevolucao(jogadorId, valor);
     if (!resultado.ok) {
       toast.error(resultado.error);
       return;

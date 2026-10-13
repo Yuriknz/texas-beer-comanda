@@ -13,12 +13,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { usePinGate } from "@/components/poker/pin-gate";
 import { usePoker } from "@/lib/poker-demo/store";
 import type { Torneio } from "@/lib/poker-demo/types";
 import { formatCurrency } from "@/lib/format";
 
 export function TorneioInscreverDialog({ torneio }: { torneio: Torneio }) {
   const { state, actions } = usePoker();
+  const pedirPin = usePinGate();
   const [open, setOpen] = useState(false);
   const [busca, setBusca] = useState("");
 
@@ -32,16 +34,21 @@ export function TorneioInscreverDialog({ torneio }: { torneio: Torneio }) {
     (j) => !termo || `${j.nome} ${j.apelido}`.toLowerCase().includes(termo)
   );
 
-  // O diálogo fica aberto depois de cada inscrição: na abertura do torneio o
-  // operador inscreve vários jogadores em sequência.
+  // A lista dá lugar ao teclado de PIN (o jogador autoriza o buy-in) e volta
+  // depois de cada inscrição: na abertura do torneio entram vários em sequência.
   function inscrever(jogadorId: string, nome: string) {
-    const resultado = actions.inscreverJogador(torneio.id, jogadorId);
-    if (!resultado.ok) {
-      toast.error(resultado.error);
-      return;
-    }
-    toast.success(`${nome} inscrito — buy-in de ${formatCurrency(torneio.buyIn)} lançado na conta.`);
-    setBusca("");
+    setOpen(false);
+    pedirPin({
+      jogadorId,
+      titulo: `Buy-in — ${torneio.nome}`,
+      detalhe: formatCurrency(torneio.buyIn),
+      executar: (credencial) => actions.inscreverJogador(torneio.id, jogadorId, credencial),
+      onSucesso: () => {
+        toast.success(`${nome} inscrito — buy-in de ${formatCurrency(torneio.buyIn)} lançado na conta.`);
+        setBusca("");
+        setOpen(true);
+      },
+    });
   }
 
   function cadastrarEInscrever() {
@@ -69,7 +76,7 @@ export function TorneioInscreverDialog({ torneio }: { torneio: Torneio }) {
           <DialogTitle>{tardia ? "Inscrição tardia" : "Inscrever jogador"}</DialogTitle>
           <DialogDescription>
             O buy-in de <span className="font-money text-foreground">{formatCurrency(torneio.buyIn)}</span> é
-            lançado automaticamente na conta do jogador (aberta na hora, se ele não tiver).
+            lançado na conta do jogador (aberta na hora, se ele não tiver) depois que ele digitar o PIN.
           </DialogDescription>
         </DialogHeader>
         <Input

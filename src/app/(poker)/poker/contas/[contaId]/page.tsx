@@ -203,6 +203,9 @@ export default function ContaPage() {
                         {lancamento.quantidade} × {formatCurrency(lancamento.valorUnitario)}
                       </span>{" "}
                       · {formatTime(lancamento.em)}
+                      {lancamento.autorizadoPor &&
+                        ` · ${lancamento.autorizadoPor === "pin" ? "PIN do jogador" : "liberado pelo gerente"}` +
+                          ` (${lancamento.operador})`}
                     </div>
                   </div>
                   <div className={cn("font-money text-lg", credito && "text-emerald-400")}>

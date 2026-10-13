@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { PageTitle } from "@/components/poker/page-title";
+import { usePinGate } from "@/components/poker/pin-gate";
 import { CacifeJogadorPicker } from "@/components/poker/cacife-jogador-picker";
 import { CaixaIndicador } from "@/components/poker/caixa-indicador";
 import { ValorInput, parseValor } from "@/components/poker/caixa-valor-input";
@@ -33,6 +34,7 @@ function fichasDaConta(conta: Conta) {
 
 export default function CacifesPage() {
   const { state, actions } = usePoker();
+  const pedirPin = usePinGate();
   const [jogadorId, setJogadorId] = useState<string | null>(null);
   const [valor, setValor] = useState("");
 
@@ -62,20 +64,36 @@ export default function CacifesPage() {
       return;
     }
     const numero = parseValor(valor);
-    const resultado =
-      tipo === "cacife" ? actions.lancarCacife(jogadorId, numero) : actions.lancarDevolucao(jogadorId, numero);
+    // limpa tudo para o próximo lançamento não cair no jogador anterior por engano
+    const limpar = () => {
+      setJogadorId(null);
+      setValor("");
+    };
+    // cacife é dívida do jogador, então ele autoriza com o PIN; devolução é crédito
+    if (tipo === "cacife") {
+      if (!(numero > 0)) {
+        toast.error("Informe o valor do cacife.");
+        return;
+      }
+      pedirPin({
+        jogadorId,
+        titulo: "Cacife (fichas)",
+        detalhe: formatCurrency(numero),
+        executar: (credencial) => actions.lancarCacife(jogadorId, numero, credencial),
+        onSucesso: () => {
+          toast.success(`Cacife de ${formatCurrency(numero)} lançado para ${nomeDe(jogadorId)}.`);
+          limpar();
+        },
+      });
+      return;
+    }
+    const resultado = actions.lancarDevolucao(jogadorId, numero);
     if (!resultado.ok) {
       toast.error(resultado.error);
       return;
     }
-    toast.success(
-      tipo === "cacife"
-        ? `Cacife de ${formatCurrency(numero)} lançado para ${nomeDe(jogadorId)}.`
-        : `Devolução de ${formatCurrency(numero)} creditada para ${nomeDe(jogadorId)}.`
-    );
-    // limpa tudo para o próximo lançamento não cair no jogador anterior por engano
-    setJogadorId(null);
-    setValor("");
+    toast.success(`Devolução de ${formatCurrency(numero)} creditada para ${nomeDe(jogadorId)}.`);
+    limpar();
   }
 
   return (

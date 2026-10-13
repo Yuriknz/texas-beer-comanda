@@ -3,8 +3,10 @@
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { resumoTorneio, totalConsumo, totalConta } from "./calc";
 import { criarSeed } from "./seed";
+import { PIN_MAX_ERROS } from "./types";
 import type {
   Conta,
+  Credencial,
   FormaPagamento,
   Jogador,
   Lancamento,
@@ -18,7 +20,7 @@ import type {
 // Protótipo: o estado inteiro fica no localStorage do aparelho. Todas as regras
 // de negócio estão concentradas aqui para que a troca por Supabase (server
 // actions) depois não exija mexer nas telas.
-const STORAGE_KEY = "wb-poker-demo-v1";
+const STORAGE_KEY = "wb-poker-demo-v2";
 
 const novoId = () => crypto.randomUUID();
 const agora = () => new Date().toISOString();
@@ -26,6 +28,8 @@ const erro = (error: string) => ({ ok: false as const, error });
 const OK = { ok: true as const };
 
 type DadosJogador = Pick<Jogador, "nome" | "apelido" | "telefone" | "cpf">;
+type Autorizacao = NonNullable<Lancamento["autorizadoPor"]>;
+const PIN_VALIDO = /^\d{4}$/;
 type DadosProduto = Pick<Produto, "nome" | "categoria" | "preco" | "disponivel">;
 type DadosTorneio = Pick<
   Torneio,
@@ -57,9 +61,66 @@ function lancar(
   tipo: Lancamento["tipo"],
   descricao: string,
   quantidade: number,
-  valorUnitario: number
+  valorUnitario: number,
+  auditoria?: { autorizadoPor: Autorizacao; operador: string }
 ) {
-  conta.lancamentos.push({ id: novoId(), tipo, descricao, quantidade, valorUnitario, em: agora() });
+  conta.lancamentos.push({
+    id: novoId(),
+    tipo,
+    descricao,
+    quantidade,
+    valorUnitario,
+    em: agora(),
+    ...auditoria,
+  });
+}
+
+/**
+ * Débito de jogo (buy-in, rebuy, add-on, cacife) só entra com o PIN do próprio
+ * jogador ou com a senha de gerente. Deve rodar antes de qualquer alteração da
+ * ação: num PIN errado só a contagem de erros é gravada.
+ */
+function autorizar(
+  state: PokerState,
+  jogadorId: string,
+  credencial: Credencial
+):
+  | { ok: true; auditoria: { autorizadoPor: Autorizacao; operador: string } }
+  | { ok: false; error: string; persistir?: boolean } {
+  const jogador = state.jogadores.find((j) => j.id === jogadorId);
+  if (!jogador) return erro("Jogador não encontrado.");
+  const liberado = (autorizadoPor: Autorizacao) => ({
+    ok: true as const,
+    auditoria: { autorizadoPor, operador: state.operador },
+  });
+
+  if ("senhaGerente" in credencial) {
+    if (credencial.senhaGerente !== state.senhaGerente) return erro("Senha de gerente incorreta.");
+    return liberado("gerente");
+  }
+  if ("novoPin" in credencial) {
+    if (jogador.pin) return erro("Este jogador já tem PIN.");
+    if (!PIN_VALIDO.test(credencial.novoPin)) return erro("O PIN precisa ter 4 dígitos.");
+    jogador.pin = credencial.novoPin;
+    jogador.pinErros = 0;
+    return liberado("pin");
+  }
+  if (!jogador.pin) return erro("Este jogador ainda não criou o PIN.");
+  if (jogador.pinErros >= PIN_MAX_ERROS) return erro("PIN bloqueado. Chame o gerente para liberar.");
+  if (credencial.pin !== jogador.pin) {
+    jogador.pinErros += 1;
+    const restam = PIN_MAX_ERROS - jogador.pinErros;
+    return {
+      ok: false,
+      persistir: true,
+      error:
+        restam > 0
+          ? `PIN incorreto. ${restam === 1 ? "Resta 1 tentativa" : `Restam ${restam} tentativas`}.`
+          : "PIN incorreto. PIN bloqueado — chame o gerente para liberar.",
+    };
+  }
+  jogador.pinErros = 0;
+  return liberado("pin");
 }
 
 function movimentar(state: PokerState, movimento: Omit<MovimentoCaixa, "id" | "em">) {
@@ -85,14 +146,20 @@ function emitirNotaDaConta(state: PokerState, conta: Conta): boolean {
   return true;
 }
 
-function criarAcoes(mutar: <T>(fn: (state: PokerState) => Resultado<T>) => Resultado<T>, reset: () => void) {
+function criarAcoes(
+  // NoInfer: o tipo extra do sucesso só vale quando a ação o declara (mutar<{ id }>)
+  mutar: <T = object>(fn: (state: PokerState) => Resultado<NoInfer<T>>) => Resultado<T>,
+  reset: () => void
+) {
   return {
     // --- Jogadores ---
-    criarJogador: (dados: DadosJogador) =>
+    criarJogador: (dados: DadosJogador & { pin?: string }) =>
       mutar<{ id: string }>((s) => {
         if (!dados.nome.trim()) return erro("Informe o nome do jogador.");
+        const pin = dados.pin ?? "";
+        if (pin && !PIN_VALIDO.test(pin)) return erro("O PIN precisa ter 4 dígitos.");
         const id = novoId();
-        s.jogadores.push({ ...dados, nome: dados.nome.trim(), id, criadoEm: agora() });
+        s.jogadores.push({ ...dados, nome: dados.nome.trim(), pin, pinErros: 0, id, criadoEm: agora() });
         return { ok: true, id };
       }),
     atualizarJogador: (id: string, dados: DadosJogador) =>
@@ -101,6 +168,18 @@ function criarAcoes(mutar: <T>(fn: (state: PokerState) => Resultado<T>) => Resul
         if (!jogador) return erro("Jogador não encontrado.");
         if (!dados.nome.trim()) return erro("Informe o nome do jogador.");
         Object.assign(jogador, dados, { nome: dados.nome.trim() });
+        return OK;
+      }),
+
+    /** Define o PIN. Trocar um PIN que já existe (esquecido ou bloqueado) exige a senha de gerente. */
+    redefinirPin: (jogadorId: string, novoPin: string, senhaGerente: string) =>
+      mutar((s) => {
+        const jogador = s.jogadores.find((j) => j.id === jogadorId);
+        if (!jogador) return erro("Jogador não encontrado.");
+        if (jogador.pin && senhaGerente !== s.senhaGerente) return erro("Senha de gerente incorreta.");
+        if (!PIN_VALIDO.test(novoPin)) return erro("O PIN precisa ter 4 dígitos.");
+        jogador.pin = novoPin;
+        jogador.pinErros = 0;
         return OK;
       }),
 
@@ -146,12 +225,14 @@ function criarAcoes(mutar: <T>(fn: (state: PokerState) => Resultado<T>) => Resul
         return OK;
       }),
     /** Compra de fichas de cash game: vai para a conta do jogador. */
-    lancarCacife: (jogadorId: string, valor: number) =>
+    lancarCacife: (jogadorId: string, valor: number, credencial: Credencial) =>
       mutar<{ contaId: string }>((s) => {
         if (!s.jogadores.some((j) => j.id === jogadorId)) return erro("Jogador não encontrado.");
         if (!(valor > 0)) return erro("Informe o valor do cacife.");
+        const autorizacao = autorizar(s, jogadorId, credencial);
+        if (!autorizacao.ok) return autorizacao;
         const conta = contaDoJogador(s, jogadorId);
-        lancar(conta, "cacife", "Cacife (fichas)", 1, valor);
+        lancar(conta, "cacife", "Cacife (fichas)", 1, valor, autorizacao.auditoria);
         return { ok: true, contaId: conta.id };
       }),
     /** Jogador devolve fichas ao sair do cash game: crédito na conta. */
@@ -245,26 +326,36 @@ function criarAcoes(mutar: <T>(fn: (state: PokerState) => Resultado<T>) => Resul
         s.torneios.push({ ...dados, nome: dados.nome.trim(), id, status: "inscricoes", inscricoes: [] });
         return { ok: true, id };
       }),
-    inscreverJogador: (torneioId: string, jogadorId: string) =>
+    inscreverJogador: (torneioId: string, jogadorId: string, credencial: Credencial) =>
       mutar((s) => {
         const torneio = s.torneios.find((t) => t.id === torneioId);
         if (!torneio || torneio.status === "encerrado") return erro("Torneio não aceita inscrições.");
         if (torneio.inscricoes.some((i) => i.jogadorId === jogadorId)) return erro("Jogador já inscrito.");
-        if (!s.jogadores.some((j) => j.id === jogadorId)) return erro("Jogador não encontrado.");
+        const autorizacao = autorizar(s, jogadorId, credencial);
+        if (!autorizacao.ok) return autorizacao;
         // inscrição tardia aumenta o campo: quem já caiu desce uma colocação
         torneio.inscricoes.forEach((i) => {
           if (i.posicao) i.posicao += 1;
         });
         torneio.inscricoes.push({ jogadorId, rebuys: 0, addon: false, status: "ativo" });
-        lancar(contaDoJogador(s, jogadorId), "torneio", `Buy-in — ${torneio.nome}`, 1, torneio.buyIn);
+        lancar(
+          contaDoJogador(s, jogadorId),
+          "torneio",
+          `Buy-in — ${torneio.nome}`,
+          1,
+          torneio.buyIn,
+          autorizacao.auditoria
+        );
         return OK;
       }),
-    registrarRebuy: (torneioId: string, jogadorId: string) =>
+    registrarRebuy: (torneioId: string, jogadorId: string, credencial: Credencial) =>
       mutar((s) => {
         const torneio = s.torneios.find((t) => t.id === torneioId);
         const inscricao = torneio?.inscricoes.find((i) => i.jogadorId === jogadorId);
         if (!torneio || torneio.status !== "em_andamento" || !inscricao) return erro("Rebuy indisponível.");
         if (inscricao.addon) return erro("Depois do add-on não há mais rebuy.");
+        const autorizacao = autorizar(s, jogadorId, credencial);
+        if (!autorizacao.ok) return autorizacao;
         inscricao.rebuys += 1;
         // rebuy recoloca na mesa um jogador que tinha sido eliminado; quem caiu
         // depois dele desce uma colocação para as posições não se repetirem
@@ -276,18 +367,34 @@ function criarAcoes(mutar: <T>(fn: (state: PokerState) => Resultado<T>) => Resul
         }
         inscricao.status = "ativo";
         inscricao.posicao = undefined;
-        lancar(contaDoJogador(s, jogadorId), "torneio", `Rebuy — ${torneio.nome}`, 1, torneio.rebuyValor);
+        lancar(
+          contaDoJogador(s, jogadorId),
+          "torneio",
+          `Rebuy — ${torneio.nome}`,
+          1,
+          torneio.rebuyValor,
+          autorizacao.auditoria
+        );
         return OK;
       }),
-    registrarAddon: (torneioId: string, jogadorId: string) =>
+    registrarAddon: (torneioId: string, jogadorId: string, credencial: Credencial) =>
       mutar((s) => {
         const torneio = s.torneios.find((t) => t.id === torneioId);
         const inscricao = torneio?.inscricoes.find((i) => i.jogadorId === jogadorId);
         if (!torneio || torneio.status !== "em_andamento" || !inscricao) return erro("Add-on indisponível.");
         if (inscricao.status !== "ativo") return erro("Jogador já foi eliminado.");
         if (inscricao.addon) return erro("Jogador já fez o add-on.");
+        const autorizacao = autorizar(s, jogadorId, credencial);
+        if (!autorizacao.ok) return autorizacao;
         inscricao.addon = true;
-        lancar(contaDoJogador(s, jogadorId), "torneio", `Add-on — ${torneio.nome}`, 1, torneio.addonValor);
+        lancar(
+          contaDoJogador(s, jogadorId),
+          "torneio",
+          `Add-on — ${torneio.nome}`,
+          1,
+          torneio.addonValor,
+          autorizacao.auditoria
+        );
         return OK;
       }),
     iniciarTorneio: (torneioId: string) =>
@@ -407,7 +514,7 @@ const acoes = criarAcoes(
   (fn) => {
     const rascunho = structuredClone(estadoAtual!);
     const resultado = fn(rascunho);
-    if (resultado.ok) gravar(rascunho);
+    if (resultado.ok || resultado.persistir) gravar(rascunho);
     return resultado;
   },
   () => gravar(criarSeed())

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePoker } from "@/lib/poker-demo/store";
-import type { Jogador } from "@/lib/poker-demo/types";
+import { PIN_MAX_ERROS, type Jogador } from "@/lib/poker-demo/types";
 
 function mascararCpf(texto: string): string {
   const d = texto.replace(/\D/g, "").slice(0, 11);
@@ -83,13 +83,30 @@ function JogadorForm({
   const [apelido, setApelido] = useState(jogador?.apelido ?? "");
   const [telefone, setTelefone] = useState(jogador?.telefone ?? "");
   const [cpf, setCpf] = useState(jogador?.cpf ?? "");
+  const [pin, setPin] = useState("");
+  const [senhaGerente, setSenhaGerente] = useState("");
+
+  const pinBloqueado = (jogador?.pinErros ?? 0) >= PIN_MAX_ERROS;
+  // trocar um PIN que já existe exige o gerente; criar o primeiro, não
+  const trocandoPin = Boolean(jogador?.pin) && pin.length > 0;
 
   function salvar(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pin && pin.length !== 4) {
+      toast.error("O PIN precisa ter 4 dígitos.");
+      return;
+    }
     const dados = { nome, apelido: apelido.trim(), telefone: telefone.trim(), cpf: cpf.trim() };
+    if (jogador && pin) {
+      const troca = actions.redefinirPin(jogador.id, pin, senhaGerente);
+      if (!troca.ok) {
+        toast.error(troca.error);
+        return;
+      }
+    }
     const resultado = jogador
       ? actions.atualizarJogador(jogador.id, dados)
-      : actions.criarJogador(dados);
+      : actions.criarJogador({ ...dados, pin });
     if (!resultado.ok) {
       toast.error(resultado.error);
       return;
@@ -148,6 +165,42 @@ function JogadorForm({
           />
         </div>
       </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="jogador-pin">{jogador?.pin ? "Novo PIN" : "PIN (4 dígitos)"}</Label>
+          <Input
+            id="jogador-pin"
+            type="password"
+            className="h-11"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder={jogador?.pin ? "Deixe vazio para manter" : "O jogador digita"}
+            value={pin}
+            onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 4))}
+          />
+        </div>
+        {trocandoPin && (
+          <div className="grid gap-2">
+            <Label htmlFor="jogador-senha-gerente">Senha de gerente</Label>
+            <Input
+              id="jogador-senha-gerente"
+              type="password"
+              className="h-11"
+              inputMode="numeric"
+              autoComplete="off"
+              value={senhaGerente}
+              onChange={(event) => setSenhaGerente(event.target.value)}
+            />
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {pinBloqueado
+          ? "PIN bloqueado por 3 erros seguidos. Defina um novo PIN com a senha de gerente para liberar."
+          : jogador?.pin
+            ? "O PIN autoriza buy-in, rebuy, add-on e cacife. Trocar exige a senha de gerente."
+            : "O PIN autoriza buy-in, rebuy, add-on e cacife. Sem PIN, o jogador cria um no primeiro lançamento."}
+      </p>
       <DialogFooter>
         <Button type="button" variant="outline" className="h-11 px-4" onClick={onConcluir}>
           Cancelar

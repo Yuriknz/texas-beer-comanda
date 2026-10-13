@@ -9,8 +9,17 @@ export type Jogador = {
   apelido: string;
   telefone: string;
   cpf: string;
+  /** PIN de 4 dígitos que o próprio jogador digita para autorizar débitos de jogo; "" = ainda não criou */
+  pin: string;
+  /** erros seguidos de PIN; com 3 o PIN bloqueia e só o gerente libera */
+  pinErros: number;
   criadoEm: string;
 };
+
+export const PIN_MAX_ERROS = 3;
+
+/** Quem autoriza um débito de jogo: o jogador (PIN, ou criando o PIN no primeiro uso) ou o gerente. */
+export type Credencial = { pin: string } | { novoPin: string } | { senhaGerente: string };
 
 export type Produto = {
   id: string;
@@ -31,6 +40,9 @@ export type Lancamento = {
   quantidade: number;
   valorUnitario: number;
   em: string;
+  /** trilha de auditoria dos débitos de jogo */
+  autorizadoPor?: "pin" | "gerente";
+  operador?: string;
 };
 
 export type Conta = {
@@ -103,6 +115,7 @@ export type NotaFiscal = {
 export type PokerState = {
   operador: string;
   senha: string;
+  senhaGerente: string;
   jogadores: Jogador[];
   produtos: Produto[];
   contas: Conta[];
@@ -111,4 +124,7 @@ export type PokerState = {
   notas: NotaFiscal[];
 };
 
-export type Resultado<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
+export type Resultado<T = unknown> =
+  | ({ ok: true } & T)
+  // persistir: a ação falhou mas deixou algo a gravar (contagem de erros de PIN)
+  | { ok: false; error: string; persistir?: boolean };
