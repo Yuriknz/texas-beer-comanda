@@ -153,7 +153,8 @@ export function criarSeed(): PokerState {
         taxaCasaPercentual: 15,
         status: "inscricoes",
         inscricoes: [],
-        premiacao: [50, 30, 20],
+        premiacao: [100],
+        premiacaoAutomatica: true,
       },
     ],
     notas: [

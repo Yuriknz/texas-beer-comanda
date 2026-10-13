@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { Info, Play, Trophy, UserX } from "lucide-react";
+import { Info, Play, Trophy, Undo2, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -120,6 +120,16 @@ export default function TorneioPage() {
     toast.success(`${nomeDe(eliminando)} eliminado.`);
   }
 
+  function desfazerEliminacao(jogadorId: string) {
+    if (!torneio) return;
+    const resultado = actions.desfazerEliminacao(torneio.id, jogadorId);
+    if (!resultado.ok) {
+      toast.error(resultado.error);
+      return;
+    }
+    toast.success(`Eliminação de ${nomeDe(jogadorId)} desfeita — de volta à disputa.`);
+  }
+
   function iniciar() {
     if (!torneio) return;
     const resultado = actions.iniciarTorneio(torneio.id);
@@ -221,7 +231,9 @@ export default function TorneioPage() {
             <p className="text-sm text-muted-foreground">
               {encerrado
                 ? "Valores finais pagos por colocação."
-                : "Atualizada a cada inscrição, rebuy e add-on."}
+                : torneio.premiacaoAutomatica
+                  ? `Sugerida pelo número de inscritos: ${resumo.percentuais.length} ${resumo.percentuais.length === 1 ? "premiado" : "premiados"} com ${resumo.inscritos} ${resumo.inscritos === 1 ? "inscrito" : "inscritos"}. Valores em reais inteiros.`
+                  : "Atualizada a cada inscrição, rebuy e add-on. Valores em reais inteiros."}
             </p>
           </div>
           <Card className="p-0">
@@ -247,7 +259,7 @@ export default function TorneioPage() {
                         )}
                       </TableCell>
                       <TableCell className="px-3 text-right font-money text-muted-foreground">
-                        {numero.format(torneio.premiacao[indice])}%
+                        {numero.format(resumo.percentuais[indice])}%
                       </TableCell>
                       <TableCell className="px-3 text-right font-money text-base">
                         {formatCurrency(premio)}
@@ -370,6 +382,15 @@ export default function TorneioPage() {
                               onClick={() => pedirLancamento("addon", inscricao.jogadorId)}
                             >
                               Add-on
+                            </Button>
+                          )}
+                          {eliminado && (
+                            <Button
+                              variant="ghost"
+                              className="h-11 flex-1 px-3 sm:flex-none"
+                              onClick={() => desfazerEliminacao(inscricao.jogadorId)}
+                            >
+                              <Undo2 /> Desfazer
                             </Button>
                           )}
                           {!eliminado && (

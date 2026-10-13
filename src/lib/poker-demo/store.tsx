@@ -33,7 +33,7 @@ const PIN_VALIDO = /^\d{4}$/;
 type DadosProduto = Pick<Produto, "nome" | "categoria" | "preco" | "disponivel">;
 type DadosTorneio = Pick<
   Torneio,
-  "nome" | "data" | "buyIn" | "rebuyValor" | "addonValor" | "fichasIniciais" | "taxaCasaPercentual" | "premiacao"
+  "nome" | "data" | "buyIn" | "rebuyValor" | "addonValor" | "fichasIniciais" | "taxaCasaPercentual" | "premiacao" | "premiacaoAutomatica"
 >;
 
 function nomeJogador(state: PokerState, jogadorId: string): string {
@@ -321,7 +321,9 @@ function criarAcoes(
         if (!dados.nome.trim()) return erro("Informe o nome do torneio.");
         if (!(dados.buyIn > 0)) return erro("Informe o buy-in.");
         const somaPremiacao = dados.premiacao.reduce((a, b) => a + b, 0);
-        if (somaPremiacao !== 100) return erro("A premiação precisa somar 100%.");
+        if (!dados.premiacaoAutomatica && somaPremiacao !== 100) {
+          return erro("A premiação precisa somar 100%.");
+        }
         const id = novoId();
         s.torneios.push({ ...dados, nome: dados.nome.trim(), id, status: "inscricoes", inscricoes: [] });
         return { ok: true, id };
@@ -417,6 +419,24 @@ function criarAcoes(
         inscricao.posicao = ativos;
         return OK;
       }),
+    /** Corrige um toque errado: o jogador volta para a disputa sem pagar rebuy. */
+    desfazerEliminacao: (torneioId: string, jogadorId: string) =>
+      mutar((s) => {
+        const torneio = s.torneios.find((t) => t.id === torneioId);
+        const inscricao = torneio?.inscricoes.find((i) => i.jogadorId === jogadorId);
+        if (!torneio || torneio.status !== "em_andamento" || !inscricao) return erro("Torneio não está em andamento.");
+        if (inscricao.status !== "eliminado") return erro("Jogador não está eliminado.");
+        // quem caiu depois dele desce uma colocação para as posições não se repetirem
+        const posicaoAnterior = inscricao.posicao;
+        if (posicaoAnterior) {
+          torneio.inscricoes.forEach((i) => {
+            if (i.posicao && i.posicao < posicaoAnterior) i.posicao += 1;
+          });
+        }
+        inscricao.status = "ativo";
+        inscricao.posicao = undefined;
+        return OK;
+      }),
     /** Define o campeão e credita os prêmios nas contas dos jogadores premiados. */
     encerrarTorneio: (torneioId: string) =>
       mutar((s) => {
@@ -425,7 +445,10 @@ function criarAcoes(
         const ativos = torneio.inscricoes.filter((i) => i.status === "ativo");
         if (ativos.length !== 1) return erro("Elimine os jogadores até restar só o campeão.");
         ativos[0].posicao = 1;
-        const { premios } = resumoTorneio(torneio);
+        const { premios, percentuais } = resumoTorneio(torneio);
+        // congela a premiação sugerida: o histórico não muda mais com a tabela
+        torneio.premiacao = percentuais;
+        torneio.premiacaoAutomatica = false;
         premios.forEach((premio, indice) => {
           const premiado = torneio.inscricoes.find((i) => i.posicao === indice + 1);
           if (!premiado || premio <= 0) return;

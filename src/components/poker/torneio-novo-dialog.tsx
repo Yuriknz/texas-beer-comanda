@@ -31,6 +31,7 @@ type Form = {
   addonValor: string;
   fichasIniciais: string;
   taxaCasaPercentual: string;
+  premiacaoAutomatica: boolean;
   premiacao: string[];
 };
 
@@ -50,6 +51,7 @@ function formInicial(): Form {
     addonValor: "50",
     fichasIniciais: "10000",
     taxaCasaPercentual: "15",
+    premiacaoAutomatica: true,
     premiacao: ["50", "30", "20"],
   };
 }
@@ -92,7 +94,7 @@ export function TorneioNovoDialog() {
     if (!(taxaCasaPercentual >= 0 && taxaCasaPercentual <= 100)) {
       return toast.error("A taxa da casa deve ficar entre 0 e 100%.");
     }
-    if (percentuais.some((p) => !Number.isInteger(p) || p <= 0)) {
+    if (!form.premiacaoAutomatica && percentuais.some((p) => !Number.isInteger(p) || p <= 0)) {
       return toast.error("Cada colocação premiada precisa de um percentual inteiro maior que zero.");
     }
 
@@ -104,7 +106,9 @@ export function TorneioNovoDialog() {
       addonValor,
       fichasIniciais,
       taxaCasaPercentual,
-      premiacao: percentuais,
+      // na sugerida a tabela vem do número de inscritos; este valor é só o ponto de partida
+      premiacao: form.premiacaoAutomatica ? [100] : percentuais,
+      premiacaoAutomatica: form.premiacaoAutomatica,
     });
     if (!resultado.ok) return toast.error(resultado.error);
 
@@ -184,73 +188,104 @@ export function TorneioNovoDialog() {
           <div className="grid gap-2">
             <div className="flex items-center justify-between gap-2">
               <Label>Premiação por colocação (%)</Label>
-              <span className={cn("font-money text-sm", somaOk ? "text-emerald-400" : "text-destructive")}>
-                Soma: {soma}%
-              </span>
+              {!form.premiacaoAutomatica && (
+                <span className={cn("font-money text-sm", somaOk ? "text-emerald-400" : "text-destructive")}>
+                  Soma: {soma}%
+                </span>
+              )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {PRESETS.map((preset) => {
-                const ativo = preset.join("-") === percentuais.join("-");
-                return (
-                  <Button
-                    key={preset.join("-")}
-                    type="button"
-                    variant={ativo ? "default" : "outline"}
-                    className="h-11 px-3 font-money"
-                    onClick={() => campo("premiacao", preset.map(String))}
-                  >
-                    {preset.join(" / ")}
-                  </Button>
-                );
-              })}
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant={form.premiacaoAutomatica ? "default" : "outline"}
+                className="h-11 px-3"
+                onClick={() => campo("premiacaoAutomatica", true)}
+              >
+                Sugerida
+              </Button>
+              <Button
+                type="button"
+                variant={form.premiacaoAutomatica ? "outline" : "default"}
+                className="h-11 px-3"
+                onClick={() => campo("premiacaoAutomatica", false)}
+              >
+                Fixa
+              </Button>
             </div>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {form.premiacao.map((percentual, indice) => (
-                <div key={indice} className="grid gap-1">
-                  <Label htmlFor={`torneio-premio-${indice}`} className="text-xs text-muted-foreground">
-                    {indice + 1}º lugar
-                  </Label>
-                  <Input
-                    id={`torneio-premio-${indice}`}
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={100}
-                    step={1}
-                    className="h-11 font-money"
-                    value={percentual}
-                    onChange={(event) =>
-                      campo(
-                        "premiacao",
-                        form.premiacao.map((p, i) => (i === indice ? event.target.value : p))
-                      )
-                    }
-                  />
+            {form.premiacaoAutomatica && (
+              <p className="text-sm text-muted-foreground">
+                O número de premiados acompanha os inscritos: 1 premiado até 3 inscritos, 2 de 4 a 6, 3 de 7 a
+                14, 4 de 15 a 21, e assim por diante até 9. A tabela é recalculada a cada inscrição e só fecha
+                no encerramento.
+              </p>
+            )}
+            {!form.premiacaoAutomatica && (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {PRESETS.map((preset) => {
+                    const ativo = preset.join("-") === percentuais.join("-");
+                    return (
+                      <Button
+                        key={preset.join("-")}
+                        type="button"
+                        variant={ativo ? "default" : "outline"}
+                        className="h-11 px-3 font-money"
+                        onClick={() => campo("premiacao", preset.map(String))}
+                      >
+                        {preset.join(" / ")}
+                      </Button>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 px-3"
-                disabled={form.premiacao.length >= MAX_COLOCACOES}
-                onClick={() => campo("premiacao", [...form.premiacao, ""])}
-              >
-                <Plus /> Colocação
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 px-3"
-                disabled={form.premiacao.length <= 1}
-                onClick={() => campo("premiacao", form.premiacao.slice(0, -1))}
-              >
-                <Minus /> Remover última
-              </Button>
-            </div>
-            {!somaOk && (
-              <p className="text-xs text-destructive">A premiação precisa somar exatamente 100%.</p>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {form.premiacao.map((percentual, indice) => (
+                    <div key={indice} className="grid gap-1">
+                      <Label htmlFor={`torneio-premio-${indice}`} className="text-xs text-muted-foreground">
+                        {indice + 1}º lugar
+                      </Label>
+                      <Input
+                        id={`torneio-premio-${indice}`}
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        max={100}
+                        step={1}
+                        className="h-11 font-money"
+                        value={percentual}
+                        onChange={(event) =>
+                          campo(
+                            "premiacao",
+                            form.premiacao.map((p, i) => (i === indice ? event.target.value : p))
+                          )
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 px-3"
+                    disabled={form.premiacao.length >= MAX_COLOCACOES}
+                    onClick={() => campo("premiacao", [...form.premiacao, ""])}
+                  >
+                    <Plus /> Colocação
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 px-3"
+                    disabled={form.premiacao.length <= 1}
+                    onClick={() => campo("premiacao", form.premiacao.slice(0, -1))}
+                  >
+                    <Minus /> Remover última
+                  </Button>
+                </div>
+                {!somaOk && (
+                  <p className="text-xs text-destructive">A premiação precisa somar exatamente 100%.</p>
+                )}
+              </>
             )}
           </div>
 

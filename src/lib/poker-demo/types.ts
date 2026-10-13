@@ -99,6 +99,8 @@ export type Torneio = {
   inscricoes: Inscricao[];
   // percentuais do prêmio líquido por colocação (índice 0 = campeão)
   premiacao: number[];
+  /** premiação sugerida pelo nº de inscritos; `premiacao` só passa a valer no encerramento */
+  premiacaoAutomatica?: boolean;
 };
 
 export type NotaFiscal = {

@@ -1,3 +1,4 @@
+import { ESTRUTURAS_PREMIACAO, sugerirPremiados } from "../torneio";
 import type { Caixa, Conta, FormaPagamento, Lancamento, MovimentoCaixa, Torneio } from "./types";
 
 export const FORMA_LABEL: Record<FormaPagamento, string> = {
@@ -43,8 +44,25 @@ export function resumoTorneio(torneio: Torneio) {
     inscritos * torneio.buyIn + rebuys * torneio.rebuyValor + addons * torneio.addonValor;
   const taxaCasa = Math.round(arrecadado * torneio.taxaCasaPercentual) / 100;
   const premioLiquido = arrecadado - taxaCasa;
-  const premios = torneio.premiacao.map(
-    (percentual) => Math.round(premioLiquido * percentual) / 100
+  const percentuais = percentuaisPremiacao(torneio);
+  // Mesma regra do módulo /torneios: cada prêmio é arredondado para baixo em
+  // reais inteiros (facilita pagar em dinheiro) e a sobra vai para o campeão,
+  // então a soma bate exatamente com o prêmio líquido.
+  const premios = percentuais.map((percentual) =>
+    premioLiquido > 0 ? Math.floor((premioLiquido * percentual) / 100) : 0
   );
-  return { inscritos, ativos, rebuys, addons, arrecadado, taxaCasa, premioLiquido, premios };
+  if (premioLiquido > 0) {
+    const sobra = premioLiquido - premios.reduce((soma, premio) => soma + premio, 0);
+    premios[0] = Math.round((premios[0] + sobra) * 100) / 100;
+  }
+  return { inscritos, ativos, rebuys, addons, arrecadado, taxaCasa, premioLiquido, percentuais, premios };
+}
+
+/**
+ * Percentual do prêmio líquido por colocação. Na premiação sugerida a tabela
+ * acompanha o número de inscritos até o encerramento, quando é congelada.
+ */
+export function percentuaisPremiacao(torneio: Torneio): number[] {
+  if (!torneio.premiacaoAutomatica) return torneio.premiacao;
+  return ESTRUTURAS_PREMIACAO[sugerirPremiados(torneio.inscricoes.length)];
 }
