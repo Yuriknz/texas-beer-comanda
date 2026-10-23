@@ -293,7 +293,7 @@ export default function TorneioPage() {
                 valor={`${numero.format(torneio.taxaCasaPercentual)}%`}
                 podeDiminuir={torneio.taxaCasaPercentual > 0}
                 podeAumentar={torneio.taxaCasaPercentual < 100}
-                onMudar={(delta) => mudarTaxa(Math.min(100, Math.max(0, Math.round(torneio.taxaCasaPercentual) + delta)))}
+                onMudar={(delta) => mudarTaxa(Math.min(100, Math.max(0, torneio.taxaCasaPercentual + delta)))}
               />
             </Card>
           )}

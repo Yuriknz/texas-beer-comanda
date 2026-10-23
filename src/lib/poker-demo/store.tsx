@@ -484,18 +484,32 @@ function criarAcoes(
           const ativos = torneio.inscricoes.filter((i) => i.status === "ativo").length;
           if (ativos <= 1) return erro("Ele é o último jogador na disputa.");
         }
+        // premiação fixa não tem como reduzir colocações: o torneio ficaria sem poder encerrar
+        if (
+          torneio.status === "em_andamento" &&
+          !torneio.premiacaoAutomatica &&
+          torneio.inscricoes.length - 1 < torneio.premiacao.length
+        ) {
+          return erro(`A premiação fixa tem ${torneio.premiacao.length} colocações; excluir deixaria menos jogadores.`);
+        }
         const contas = s.contas.filter((c) => c.jogadorId === jogadorId);
         // conta aberta: o débito simplesmente sai. Conta já fechada (ele pagou):
         // o valor volta como crédito na conta aberta e é pago no fechamento dela.
+        // Estornos de exclusões anteriores (desistiu, voltou, desistiu de novo) são
+        // descontados, para não devolver duas vezes o mesmo pagamento.
         let jaPago = 0;
         contas.forEach((c) => {
           const debitos = c.lancamentos.filter((l) => ehDebitoDoTorneio(l, torneio));
+          jaPago += c.lancamentos
+            .filter((l) => l.tipo === "torneio" && l.valorUnitario < 0 && l.torneioId === torneio.id)
+            .reduce((soma, l) => soma + totalLancamento(l), 0);
           if (c.status === "fechada") {
             jaPago += debitos.reduce((soma, l) => soma + totalLancamento(l), 0);
           } else {
             c.lancamentos = c.lancamentos.filter((l) => !debitos.includes(l));
           }
         });
+        jaPago = Math.max(0, Math.round(jaPago * 100) / 100);
         if (jaPago > 0) {
           lancar(contaDoJogador(s, jogadorId), "torneio", `Estorno da inscrição — ${torneio.nome}`, 1, -jaPago, {
             operador: s.operador,
