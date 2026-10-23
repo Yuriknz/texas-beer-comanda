@@ -17,8 +17,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { parseNumero } from "@/components/poker/torneio-util";
+import { MAX_PREMIADOS, percentuaisTabelaBar } from "@/lib/poker-demo/calc";
 import { usePoker } from "@/lib/poker-demo/store";
 import { cn } from "@/lib/utils";
+
+const numero = new Intl.NumberFormat("pt-BR");
 
 const PRESETS: number[][] = [[100], [70, 30], [50, 30, 20], [40, 25, 20, 15]];
 const MAX_COLOCACOES = 9;
@@ -33,6 +36,8 @@ type Form = {
   taxaCasaPercentual: string;
   premiacaoAutomatica: boolean;
   premiacao: string[];
+  /** tabela do bar: quantos premiar; undefined = sugerido pelo nº de inscritos */
+  premiados?: number;
 };
 
 /** Valor para <input type="datetime-local"> no fuso do aparelho. */
@@ -109,6 +114,7 @@ export function TorneioNovoDialog() {
       // na sugerida a tabela vem do número de inscritos; este valor é só o ponto de partida
       premiacao: form.premiacaoAutomatica ? [100] : percentuais,
       premiacaoAutomatica: form.premiacaoAutomatica,
+      premiados: form.premiacaoAutomatica ? form.premiados : undefined,
     });
     if (!resultado.ok) return toast.error(resultado.error);
 
@@ -127,7 +133,7 @@ export function TorneioNovoDialog() {
           <DialogHeader>
             <DialogTitle>Novo torneio</DialogTitle>
             <DialogDescription>
-              O torneio começa com as inscrições abertas. Os valores não podem ser alterados depois.
+              O torneio começa com as inscrições abertas. Buy-in, rebuy e add-on não podem ser alterados depois.
             </DialogDescription>
           </DialogHeader>
 
@@ -201,7 +207,7 @@ export function TorneioNovoDialog() {
                 className="h-11 px-3"
                 onClick={() => campo("premiacaoAutomatica", true)}
               >
-                Sugerida
+                Tabela do bar
               </Button>
               <Button
                 type="button"
@@ -213,11 +219,34 @@ export function TorneioNovoDialog() {
               </Button>
             </div>
             {form.premiacaoAutomatica && (
-              <p className="text-sm text-muted-foreground">
-                O número de premiados acompanha os inscritos: 1 premiado até 3 inscritos, 2 de 4 a 6, 3 de 7 a
-                14, 4 de 15 a 21, e assim por diante até 9. A tabela é recalculada a cada inscrição e só fecha
-                no encerramento.
-              </p>
+              <>
+                <Label className="text-xs text-muted-foreground">Quantos premiar</Label>
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                  {[undefined, ...Array.from({ length: MAX_PREMIADOS }, (_, i) => i + 1)].map((n) => (
+                    <Button
+                      key={n ?? "auto"}
+                      type="button"
+                      variant={form.premiados === n ? "default" : "outline"}
+                      className="h-11 px-2 font-money"
+                      onClick={() => campo("premiados", n)}
+                    >
+                      {n ?? "Auto"}
+                    </Button>
+                  ))}
+                </div>
+                {form.premiados && (
+                  <p className="font-money text-sm">
+                    {percentuaisTabelaBar(form.premiados)
+                      .map((p) => `${numero.format(p)}%`)
+                      .join(" / ")}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  O prêmio é repartido pela tabela do bar (1º 20–30%, 2º 12–18%, 3º 8–12%, 4º 6–9%, 5º 5–7%, 6º
+                  4–6%), reescalada para somar 100% entre os premiados. Em Auto, o número acompanha os inscritos.
+                  Dá para mudar o número de premiados e o rake na tela do torneio até o encerramento.
+                </p>
+              </>
             )}
             {!form.premiacaoAutomatica && (
               <>

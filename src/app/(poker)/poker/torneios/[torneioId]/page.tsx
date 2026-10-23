@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { Info, Play, Trophy, Undo2, UserMinus, UserX } from "lucide-react";
+import { Info, Minus, Play, Plus, Trophy, Undo2, UserMinus, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -31,7 +31,7 @@ import { TorneioEncerrarDialog } from "@/components/poker/torneio-encerrar-dialo
 import { TorneioInscreverDialog } from "@/components/poker/torneio-inscrever-dialog";
 import { TorneioStatusBadge } from "@/components/poker/torneio-status-badge";
 import { premiosPorJogador } from "@/components/poker/torneio-util";
-import { resumoTorneio } from "@/lib/poker-demo/calc";
+import { MAX_PREMIADOS, resumoTorneio } from "@/lib/poker-demo/calc";
 import { usePoker } from "@/lib/poker-demo/store";
 import type { Inscricao } from "@/lib/poker-demo/types";
 import { formatCurrency, formatDateTime } from "@/lib/format";
@@ -136,7 +136,23 @@ export default function TorneioPage() {
       toast.error(resultado.error);
       return;
     }
-    toast.success(`Inscrição de ${nomeDe(excluindo)} excluída e valor retirado da conta.`);
+    toast.success(
+      resultado.estorno > 0
+        ? `Inscrição de ${nomeDe(excluindo)} excluída. ${formatCurrency(resultado.estorno)} já pagos voltaram como crédito na conta.`
+        : `Inscrição de ${nomeDe(excluindo)} excluída e valor retirado da conta.`
+    );
+  }
+
+  function mudarPremiados(premiados: number) {
+    if (!torneio) return;
+    const resultado = actions.definirPremiados(torneio.id, premiados);
+    if (!resultado.ok) toast.error(resultado.error);
+  }
+
+  function mudarTaxa(taxa: number) {
+    if (!torneio) return;
+    const resultado = actions.definirTaxaCasa(torneio.id, taxa);
+    if (!resultado.ok) toast.error(resultado.error);
   }
 
   function desfazerEliminacao(jogadorId: string) {
@@ -257,10 +273,30 @@ export default function TorneioPage() {
               {encerrado
                 ? "Valores finais pagos por colocação."
                 : torneio.premiacaoAutomatica
-                  ? `Sugerida pelo número de inscritos: ${resumo.percentuais.length} ${resumo.percentuais.length === 1 ? "premiado" : "premiados"} com ${resumo.inscritos} ${resumo.inscritos === 1 ? "inscrito" : "inscritos"}. Valores em reais inteiros.`
-                  : "Atualizada a cada inscrição, rebuy e add-on. Valores em reais inteiros."}
+                  ? `Tabela do bar, repartida entre ${resumo.percentuais.length} ${resumo.percentuais.length === 1 ? "premiado" : "premiados"}${torneio.premiados ? "" : " (sugerido pelo número de inscritos)"}. Valores em reais inteiros.`
+                  : "Premiação fixa. Atualizada a cada inscrição, rebuy e add-on. Valores em reais inteiros."}
             </p>
           </div>
+          {!encerrado && (
+            <Card className="gap-3 p-3">
+              {torneio.premiacaoAutomatica && (
+                <Ajuste
+                  label="Premiados"
+                  valor={String(resumo.percentuais.length)}
+                  podeDiminuir={resumo.percentuais.length > 1}
+                  podeAumentar={resumo.percentuais.length < MAX_PREMIADOS}
+                  onMudar={(delta) => mudarPremiados(resumo.percentuais.length + delta)}
+                />
+              )}
+              <Ajuste
+                label="Rake (taxa da casa)"
+                valor={`${numero.format(torneio.taxaCasaPercentual)}%`}
+                podeDiminuir={torneio.taxaCasaPercentual > 0}
+                podeAumentar={torneio.taxaCasaPercentual < 100}
+                onMudar={(delta) => mudarTaxa(Math.min(100, Math.max(0, Math.round(torneio.taxaCasaPercentual) + delta)))}
+              />
+            </Card>
+          )}
           <Card className="p-0">
             <Table>
               <TableHeader>
@@ -479,8 +515,8 @@ export default function TorneioPage() {
                 <DialogTitle>Excluir inscrição</DialogTitle>
                 <DialogDescription>
                   Excluir <Nome>{nomeDe(excluindo)}</Nome> do torneio? Use quando ele desistiu ou não tinha o
-                  dinheiro: <Valor>{formatCurrency(valorExcluindo)}</Valor> sai da conta dele e do prêmio. Se ele
-                  jogou e perdeu, use Eliminar.
+                  dinheiro: <Valor>{formatCurrency(valorExcluindo)}</Valor> sai do prêmio e da conta dele. Se ele já
+                  pagou, o valor volta como crédito na conta. Se ele jogou e perdeu, use Eliminar.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -514,6 +550,49 @@ function Colocacao({ inscricao }: { inscricao: Inscricao }) {
     >
       {campeao ? <Trophy className="size-5" /> : inscricao.posicao ? `${inscricao.posicao}º` : "—"}
     </span>
+  );
+}
+
+function Ajuste({
+  label,
+  valor,
+  podeDiminuir,
+  podeAumentar,
+  onMudar,
+}: {
+  label: string;
+  valor: string;
+  podeDiminuir: boolean;
+  podeAumentar: boolean;
+  onMudar: (delta: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-11"
+          aria-label={`Diminuir ${label}`}
+          disabled={!podeDiminuir}
+          onClick={() => onMudar(-1)}
+        >
+          <Minus />
+        </Button>
+        <span className="w-14 text-center font-money text-lg">{valor}</span>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-11"
+          aria-label={`Aumentar ${label}`}
+          disabled={!podeAumentar}
+          onClick={() => onMudar(1)}
+        >
+          <Plus />
+        </Button>
+      </div>
+    </div>
   );
 }
 

@@ -104,8 +104,8 @@ export function TorneioEncerrarDialog({ torneio }: { torneio: Torneio }) {
         </div>
         {semDono > 0 && (
           <p className="text-xs text-destructive">
-            {formatCurrency(semDono)} da premiação não tem colocado correspondente e não será creditado
-            a ninguém.
+            {formatCurrency(semDono)} da premiação não tem colocado correspondente. Diminua o número de
+            premiados na tela do torneio antes de encerrar.
           </p>
         )}
 
@@ -113,7 +113,7 @@ export function TorneioEncerrarDialog({ torneio }: { torneio: Torneio }) {
           <Button variant="outline" className="h-11 px-4" onClick={() => setOpen(false)}>
             Voltar
           </Button>
-          <Button className="h-11 px-4" onClick={encerrar} disabled={!campeao}>
+          <Button className="h-11 px-4" onClick={encerrar} disabled={!campeao || semDono > 0}>
             Confirmar e creditar prêmios
           </Button>
         </DialogFooter>

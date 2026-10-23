@@ -1,4 +1,4 @@
-import { ESTRUTURAS_PREMIACAO, sugerirPremiados } from "../torneio";
+import { sugerirPremiados } from "../torneio";
 import type { Caixa, Conta, FormaPagamento, Lancamento, MovimentoCaixa, Torneio } from "./types";
 
 export const FORMA_LABEL: Record<FormaPagamento, string> = {
@@ -59,10 +59,34 @@ export function resumoTorneio(torneio: Torneio) {
 }
 
 /**
- * Percentual do prêmio líquido por colocação. Na premiação sugerida a tabela
- * acompanha o número de inscritos até o encerramento, quando é congelada.
+ * Tabela do bar: meio de cada faixa usada na casa (1º 20–30%, 2º 12–18%,
+ * 3º 8–12%, 4º 6–9%, 5º 5–7%, 6º 4–6%). Com N premiados, os N primeiros pesos
+ * são reescalados para somar 100%.
+ */
+const PESOS_TABELA_BAR = [25, 15, 10, 7.5, 6, 5];
+export const MAX_PREMIADOS = PESOS_TABELA_BAR.length;
+
+export function percentuaisTabelaBar(premiados: number): number[] {
+  const pesos = PESOS_TABELA_BAR.slice(0, Math.min(Math.max(premiados, 1), MAX_PREMIADOS));
+  const total = pesos.reduce((soma, peso) => soma + peso, 0);
+  const percentuais = pesos.map((peso) => Math.round((peso * 1000) / total) / 10);
+  // o arredondamento em 0,1% vai para o campeão, para a soma fechar em 100
+  const sobra = 100 - percentuais.reduce((soma, p) => soma + p, 0);
+  percentuais[0] = Math.round((percentuais[0] + sobra) * 10) / 10;
+  return percentuais;
+}
+
+/** Quantas colocações recebem prêmio. */
+export function numeroPremiados(torneio: Torneio): number {
+  if (!torneio.premiacaoAutomatica) return torneio.premiacao.length;
+  return torneio.premiados ?? Math.min(sugerirPremiados(torneio.inscricoes.length), MAX_PREMIADOS);
+}
+
+/**
+ * Percentual do prêmio líquido por colocação. Na tabela do bar o número de
+ * premiados pode mudar até o encerramento, quando a tabela é congelada.
  */
 export function percentuaisPremiacao(torneio: Torneio): number[] {
   if (!torneio.premiacaoAutomatica) return torneio.premiacao;
-  return ESTRUTURAS_PREMIACAO[sugerirPremiados(torneio.inscricoes.length)];
+  return percentuaisTabelaBar(numeroPremiados(torneio));
 }

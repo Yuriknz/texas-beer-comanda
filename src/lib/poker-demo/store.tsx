@@ -1,7 +1,14 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
-import { resumoTorneio, totalConsumo, totalConta } from "./calc";
+import {
+  MAX_PREMIADOS,
+  numeroPremiados,
+  resumoTorneio,
+  totalConsumo,
+  totalConta,
+  totalLancamento,
+} from "./calc";
 import { criarSeed } from "./seed";
 import { PIN_MAX_ERROS } from "./types";
 import type {
@@ -33,7 +40,7 @@ const PIN_VALIDO = /^\d{4}$/;
 type DadosProduto = Pick<Produto, "nome" | "categoria" | "preco" | "disponivel">;
 type DadosTorneio = Pick<
   Torneio,
-  "nome" | "data" | "buyIn" | "rebuyValor" | "addonValor" | "fichasIniciais" | "taxaCasaPercentual" | "premiacao" | "premiacaoAutomatica"
+  "nome" | "data" | "buyIn" | "rebuyValor" | "addonValor" | "fichasIniciais" | "taxaCasaPercentual" | "premiacao" | "premiacaoAutomatica" | "premiados"
 >;
 
 function nomeJogador(state: PokerState, jogadorId: string): string {
@@ -77,7 +84,8 @@ function lancar(
 
 /** Buy-in, rebuy e add-on que o jogador pagou neste torneio (os dados de exemplo não têm torneioId). */
 function ehDebitoDoTorneio(lancamento: Lancamento, torneio: Torneio): boolean {
-  if (lancamento.tipo !== "torneio") return false;
+  // valor negativo é estorno de uma exclusão anterior, não débito
+  if (lancamento.tipo !== "torneio" || lancamento.valorUnitario <= 0) return false;
   if (lancamento.torneioId) return lancamento.torneioId === torneio.id;
   return lancamento.descricao.endsWith(` — ${torneio.nome}`);
 }
@@ -331,6 +339,12 @@ function criarAcoes(
         if (!dados.premiacaoAutomatica && somaPremiacao !== 100) {
           return erro("A premiação precisa somar 100%.");
         }
+        if (dados.premiados !== undefined && !(dados.premiados >= 1 && dados.premiados <= MAX_PREMIADOS)) {
+          return erro(`Escolha de 1 a ${MAX_PREMIADOS} premiados.`);
+        }
+        if (!(dados.taxaCasaPercentual >= 0 && dados.taxaCasaPercentual <= 100)) {
+          return erro("A taxa da casa deve ficar entre 0 e 100%.");
+        }
         const id = novoId();
         s.torneios.push({ ...dados, nome: dados.nome.trim(), id, status: "inscricoes", inscricoes: [] });
         return { ok: true, id };
@@ -411,7 +425,38 @@ function criarAcoes(
         const torneio = s.torneios.find((t) => t.id === torneioId);
         if (!torneio || torneio.status !== "inscricoes") return erro("Torneio não pode ser iniciado.");
         if (torneio.inscricoes.length < 2) return erro("São necessários pelo menos 2 inscritos.");
+        const premiados = numeroPremiados(torneio);
+        if (torneio.inscricoes.length < premiados) {
+          return erro(`Há ${premiados} colocações premiadas e só ${torneio.inscricoes.length} inscritos. Diminua os premiados.`);
+        }
         torneio.status = "em_andamento";
+        return OK;
+      }),
+    /** Operador decide quantos premiar (tabela do bar) até o encerramento. */
+    definirPremiados: (torneioId: string, premiados: number) =>
+      mutar((s) => {
+        const torneio = s.torneios.find((t) => t.id === torneioId);
+        if (!torneio || torneio.status === "encerrado") return erro("Torneio já encerrado.");
+        if (!torneio.premiacaoAutomatica) return erro("Este torneio usa premiação fixa.");
+        if (!(Number.isInteger(premiados) && premiados >= 1 && premiados <= MAX_PREMIADOS)) {
+          return erro(`Escolha de 1 a ${MAX_PREMIADOS} premiados.`);
+        }
+        // nas inscrições o campo ainda cresce; com o torneio rolando não pode passar dos inscritos
+        if (torneio.status === "em_andamento" && premiados > torneio.inscricoes.length) {
+          return erro(`Só há ${torneio.inscricoes.length} inscritos.`);
+        }
+        torneio.premiados = premiados;
+        return OK;
+      }),
+    /** Rake do torneio, decidido pelo operador até o encerramento. */
+    definirTaxaCasa: (torneioId: string, taxaCasaPercentual: number) =>
+      mutar((s) => {
+        const torneio = s.torneios.find((t) => t.id === torneioId);
+        if (!torneio || torneio.status === "encerrado") return erro("Torneio já encerrado.");
+        if (!(taxaCasaPercentual >= 0 && taxaCasaPercentual <= 100)) {
+          return erro("A taxa da casa deve ficar entre 0 e 100%.");
+        }
+        torneio.taxaCasaPercentual = taxaCasaPercentual;
         return OK;
       }),
     eliminarJogador: (torneioId: string, jogadorId: string) =>
@@ -431,7 +476,7 @@ function criarAcoes(
      * a inscrição some. Buy-in, rebuys e add-on saem da conta e, portanto, do prêmio.
      */
     excluirInscricao: (torneioId: string, jogadorId: string) =>
-      mutar((s) => {
+      mutar<{ estorno: number }>((s) => {
         const torneio = s.torneios.find((t) => t.id === torneioId);
         const inscricao = torneio?.inscricoes.find((i) => i.jogadorId === jogadorId);
         if (!torneio || torneio.status === "encerrado" || !inscricao) return erro("Inscrição não pode ser excluída.");
@@ -440,19 +485,30 @@ function criarAcoes(
           if (ativos <= 1) return erro("Ele é o último jogador na disputa.");
         }
         const contas = s.contas.filter((c) => c.jogadorId === jogadorId);
-        if (contas.some((c) => c.status === "fechada" && c.lancamentos.some((l) => ehDebitoDoTorneio(l, torneio)))) {
-          return erro("A conta com essa inscrição já foi fechada. Devolva o valor pelo caixa.");
-        }
+        // conta aberta: o débito simplesmente sai. Conta já fechada (ele pagou):
+        // o valor volta como crédito na conta aberta e é pago no fechamento dela.
+        let jaPago = 0;
         contas.forEach((c) => {
-          c.lancamentos = c.lancamentos.filter((l) => !ehDebitoDoTorneio(l, torneio));
+          const debitos = c.lancamentos.filter((l) => ehDebitoDoTorneio(l, torneio));
+          if (c.status === "fechada") {
+            jaPago += debitos.reduce((soma, l) => soma + totalLancamento(l), 0);
+          } else {
+            c.lancamentos = c.lancamentos.filter((l) => !debitos.includes(l));
+          }
         });
+        if (jaPago > 0) {
+          lancar(contaDoJogador(s, jogadorId), "torneio", `Estorno da inscrição — ${torneio.nome}`, 1, -jaPago, {
+            operador: s.operador,
+            torneioId: torneio.id,
+          });
+        }
         // o campo diminui: quem caiu antes dele (colocação maior) sobe uma posição
         const posicaoExcluida = inscricao.posicao ?? 0;
         torneio.inscricoes = torneio.inscricoes.filter((i) => i.jogadorId !== jogadorId);
         torneio.inscricoes.forEach((i) => {
           if (i.posicao && i.posicao > posicaoExcluida) i.posicao -= 1;
         });
-        return OK;
+        return { ok: true, estorno: jaPago };
       }),
     /** Corrige um toque errado: o jogador volta para a disputa sem pagar rebuy. */
     desfazerEliminacao: (torneioId: string, jogadorId: string) =>
@@ -479,6 +535,10 @@ function criarAcoes(
         if (!torneio || torneio.status !== "em_andamento") return erro("Torneio não está em andamento.");
         const ativos = torneio.inscricoes.filter((i) => i.status === "ativo");
         if (ativos.length !== 1) return erro("Elimine os jogadores até restar só o campeão.");
+        // exclusões depois do início podem deixar menos jogadores que colocações premiadas
+        if (torneio.inscricoes.length < numeroPremiados(torneio)) {
+          return erro("Há mais colocações premiadas que jogadores. Diminua os premiados.");
+        }
         ativos[0].posicao = 1;
         const { premios, percentuais } = resumoTorneio(torneio);
         // congela a premiação sugerida: o histórico não muda mais com a tabela
