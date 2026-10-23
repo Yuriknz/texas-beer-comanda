@@ -39,11 +39,13 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isLoginRoute = pathname === "/login";
 
-  if (!user && !isLoginRoute) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // Login por email e senha desligado por enquanto: sem sessão, tudo (inclusive
+  // /login) cai no protótipo do poker. Para religar, voltar a mandar para "/login".
+  if (!user) {
+    return NextResponse.redirect(new URL("/poker", request.url));
   }
 
-  if (user && isLoginRoute) {
+  if (isLoginRoute) {
     return NextResponse.redirect(new URL("/mesas", request.url));
   }
 
