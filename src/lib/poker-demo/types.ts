@@ -43,6 +43,8 @@ export type Lancamento = {
   /** trilha de auditoria dos débitos de jogo */
   autorizadoPor?: "pin" | "gerente";
   operador?: string;
+  /** buy-in, rebuy e add-on: torneio de origem, para estornar se a inscrição for excluída */
+  torneioId?: string;
 };
 
 export type Conta = {

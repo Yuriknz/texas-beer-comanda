@@ -62,7 +62,7 @@ function lancar(
   descricao: string,
   quantidade: number,
   valorUnitario: number,
-  auditoria?: { autorizadoPor: Autorizacao; operador: string }
+  extras?: Pick<Lancamento, "autorizadoPor" | "operador" | "torneioId">
 ) {
   conta.lancamentos.push({
     id: novoId(),
@@ -71,8 +71,15 @@ function lancar(
     quantidade,
     valorUnitario,
     em: agora(),
-    ...auditoria,
+    ...extras,
   });
+}
+
+/** Buy-in, rebuy e add-on que o jogador pagou neste torneio (os dados de exemplo não têm torneioId). */
+function ehDebitoDoTorneio(lancamento: Lancamento, torneio: Torneio): boolean {
+  if (lancamento.tipo !== "torneio") return false;
+  if (lancamento.torneioId) return lancamento.torneioId === torneio.id;
+  return lancamento.descricao.endsWith(` — ${torneio.nome}`);
 }
 
 /**
@@ -346,7 +353,7 @@ function criarAcoes(
           `Buy-in — ${torneio.nome}`,
           1,
           torneio.buyIn,
-          autorizacao.auditoria
+          { ...autorizacao.auditoria, torneioId: torneio.id }
         );
         return OK;
       }),
@@ -375,7 +382,7 @@ function criarAcoes(
           `Rebuy — ${torneio.nome}`,
           1,
           torneio.rebuyValor,
-          autorizacao.auditoria
+          { ...autorizacao.auditoria, torneioId: torneio.id }
         );
         return OK;
       }),
@@ -395,7 +402,7 @@ function criarAcoes(
           `Add-on — ${torneio.nome}`,
           1,
           torneio.addonValor,
-          autorizacao.auditoria
+          { ...autorizacao.auditoria, torneioId: torneio.id }
         );
         return OK;
       }),
@@ -417,6 +424,34 @@ function criarAcoes(
         if (ativos <= 1) return erro("Resta só o campeão — encerre o torneio.");
         inscricao.status = "eliminado";
         inscricao.posicao = ativos;
+        return OK;
+      }),
+    /**
+     * Desistência (não tinha o dinheiro, mudou de ideia): diferente da eliminação,
+     * a inscrição some. Buy-in, rebuys e add-on saem da conta e, portanto, do prêmio.
+     */
+    excluirInscricao: (torneioId: string, jogadorId: string) =>
+      mutar((s) => {
+        const torneio = s.torneios.find((t) => t.id === torneioId);
+        const inscricao = torneio?.inscricoes.find((i) => i.jogadorId === jogadorId);
+        if (!torneio || torneio.status === "encerrado" || !inscricao) return erro("Inscrição não pode ser excluída.");
+        if (torneio.status === "em_andamento" && inscricao.status === "ativo") {
+          const ativos = torneio.inscricoes.filter((i) => i.status === "ativo").length;
+          if (ativos <= 1) return erro("Ele é o último jogador na disputa.");
+        }
+        const contas = s.contas.filter((c) => c.jogadorId === jogadorId);
+        if (contas.some((c) => c.status === "fechada" && c.lancamentos.some((l) => ehDebitoDoTorneio(l, torneio)))) {
+          return erro("A conta com essa inscrição já foi fechada. Devolva o valor pelo caixa.");
+        }
+        contas.forEach((c) => {
+          c.lancamentos = c.lancamentos.filter((l) => !ehDebitoDoTorneio(l, torneio));
+        });
+        // o campo diminui: quem caiu antes dele (colocação maior) sobe uma posição
+        const posicaoExcluida = inscricao.posicao ?? 0;
+        torneio.inscricoes = torneio.inscricoes.filter((i) => i.jogadorId !== jogadorId);
+        torneio.inscricoes.forEach((i) => {
+          if (i.posicao && i.posicao > posicaoExcluida) i.posicao -= 1;
+        });
         return OK;
       }),
     /** Corrige um toque errado: o jogador volta para a disputa sem pagar rebuy. */

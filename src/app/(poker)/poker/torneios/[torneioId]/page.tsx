@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { Info, Play, Trophy, Undo2, UserX } from "lucide-react";
+import { Info, Play, Trophy, Undo2, UserMinus, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -46,6 +46,9 @@ export default function TorneioPage() {
   // Eliminação pede confirmação: um toque errado no tablet muda a classificação.
   const [eliminando, setEliminando] = useState<string | null>(null);
   const [confirmando, setConfirmando] = useState(false);
+  // Exclusão é para desistência: a inscrição some e o valor sai da conta e do prêmio.
+  const [excluindo, setExcluindo] = useState<string | null>(null);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
 
   const torneio = state.torneios.find((t) => t.id === torneioId);
 
@@ -120,6 +123,22 @@ export default function TorneioPage() {
     toast.success(`${nomeDe(eliminando)} eliminado.`);
   }
 
+  function pedirExclusao(jogadorId: string) {
+    setExcluindo(jogadorId);
+    setConfirmandoExclusao(true);
+  }
+
+  function confirmarExclusao() {
+    if (!excluindo || !torneio) return;
+    const resultado = actions.excluirInscricao(torneio.id, excluindo);
+    setConfirmandoExclusao(false);
+    if (!resultado.ok) {
+      toast.error(resultado.error);
+      return;
+    }
+    toast.success(`Inscrição de ${nomeDe(excluindo)} excluída e valor retirado da conta.`);
+  }
+
   function desfazerEliminacao(jogadorId: string) {
     if (!torneio) return;
     const resultado = actions.desfazerEliminacao(torneio.id, jogadorId);
@@ -151,6 +170,12 @@ export default function TorneioPage() {
   ];
 
   const inscricaoEliminando = torneio.inscricoes.find((i) => i.jogadorId === eliminando);
+  const inscricaoExcluindo = torneio.inscricoes.find((i) => i.jogadorId === excluindo);
+  const valorExcluindo = inscricaoExcluindo
+    ? torneio.buyIn +
+      inscricaoExcluindo.rebuys * torneio.rebuyValor +
+      (inscricaoExcluindo.addon ? torneio.addonValor : 0)
+    : 0;
 
   return (
     <>
@@ -361,9 +386,9 @@ export default function TorneioPage() {
                         </div>
                       )}
 
-                      {emAndamento && (
+                      {!encerrado && (
                         <div className="flex shrink-0 flex-wrap gap-2">
-                          {temRebuy && (
+                          {emAndamento && temRebuy && (
                             <Button
                               variant="outline"
                               className="h-11 flex-1 px-3 sm:flex-none"
@@ -374,7 +399,7 @@ export default function TorneioPage() {
                               Rebuy
                             </Button>
                           )}
-                          {temAddon && !eliminado && (
+                          {emAndamento && temAddon && !eliminado && (
                             <Button
                               variant="outline"
                               className="h-11 flex-1 px-3 sm:flex-none"
@@ -393,7 +418,7 @@ export default function TorneioPage() {
                               <Undo2 /> Desfazer
                             </Button>
                           )}
-                          {!eliminado && (
+                          {emAndamento && !eliminado && (
                             <Button
                               variant="destructive"
                               className="h-11 flex-1 px-3 sm:flex-none"
@@ -403,6 +428,14 @@ export default function TorneioPage() {
                               Eliminar
                             </Button>
                           )}
+                          <Button
+                            variant="ghost"
+                            className="h-11 flex-1 px-3 text-muted-foreground sm:flex-none"
+                            disabled={emAndamento && !eliminado && resumo.ativos <= 1}
+                            onClick={() => pedirExclusao(inscricao.jogadorId)}
+                          >
+                            <UserMinus /> Excluir
+                          </Button>
                         </div>
                       )}
                     </li>
@@ -431,6 +464,31 @@ export default function TorneioPage() {
                 </Button>
                 <Button variant="destructive" className="h-11 px-4" onClick={confirmarEliminacao}>
                   Eliminar
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmandoExclusao} onOpenChange={setConfirmandoExclusao}>
+        <DialogContent>
+          {excluindo && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Excluir inscrição</DialogTitle>
+                <DialogDescription>
+                  Excluir <Nome>{nomeDe(excluindo)}</Nome> do torneio? Use quando ele desistiu ou não tinha o
+                  dinheiro: <Valor>{formatCurrency(valorExcluindo)}</Valor> sai da conta dele e do prêmio. Se ele
+                  jogou e perdeu, use Eliminar.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" className="h-11 px-4" onClick={() => setConfirmandoExclusao(false)}>
+                  Cancelar
+                </Button>
+                <Button variant="destructive" className="h-11 px-4" onClick={confirmarExclusao}>
+                  Excluir inscrição
                 </Button>
               </DialogFooter>
             </>
