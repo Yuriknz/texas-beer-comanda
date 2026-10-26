@@ -16,7 +16,7 @@ export default function PokerLayout({ children }: { children: React.ReactNode })
           <PokerHeader />
           <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 p-4">{children}</main>
           <footer className="px-4 pb-4 text-center text-xs text-muted-foreground">
-            Dados salvos só neste aparelho. Baixe o backup em Senha e backup no fim da noite.
+            Dados salvos só neste aparelho. Faça o backup em Senha e backup no fim da noite.
           </footer>
         </div>
       </PinGateProvider>

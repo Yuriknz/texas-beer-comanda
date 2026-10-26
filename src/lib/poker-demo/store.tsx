@@ -158,8 +158,7 @@ function emitirNotaDaConta(state: PokerState, conta: Conta): boolean {
 
 function criarAcoes(
   // NoInfer: o tipo extra do sucesso só vale quando a ação o declara (mutar<{ id }>)
-  mutar: <T = object>(fn: (state: PokerState) => Resultado<NoInfer<T>>) => Resultado<T>,
-  reset: () => void
+  mutar: <T = object>(fn: (state: PokerState) => Resultado<NoInfer<T>>) => Resultado<T>
 ) {
   return {
     // --- Jogadores ---
@@ -640,16 +639,22 @@ function criarAcoes(
         return OK;
       }),
 
-    /** Volta aos dados de demonstração originais. */
-    resetarDemo: reset,
+    /** Volta aos dados de demonstração originais. Apaga tudo, então pede a senha do operador. */
+    resetarDemo: (senhaAtual: string) =>
+      mutar((s) => {
+        if (senhaAtual !== s.senha) return erro("Senha do operador incorreta.");
+        Object.assign(s, criarSeed());
+        return OK;
+      }),
 
     /**
      * Uso de verdade: apaga jogadores, contas, caixa, torneios e notas de exemplo.
      * Fica o cardápio. As duas senhas são trocadas porque as de exemplo
      * aparecem na tela de demonstração.
      */
-    comecarDoZero: (senha: string, senhaGerente: string) =>
+    comecarDoZero: (senhaAtual: string, senha: string, senhaGerente: string) =>
       mutar((s) => {
+        if (senhaAtual !== s.senha) return erro("Senha atual do operador incorreta.");
         if (senha.length < 4) return erro("A senha do operador precisa de pelo menos 4 caracteres.");
         if (senha === SENHA_EXEMPLO) return erro("Escolha uma senha do operador diferente da de exemplo.");
         if (!/^\d{4,}$/.test(senhaGerente)) return erro("A senha de gerente precisa de pelo menos 4 números.");
@@ -733,7 +738,11 @@ export function restaurarBackup(texto: string): Resultado {
     return erro("Não deu para ler o arquivo de backup.");
   }
   const listas = ["jogadores", "produtos", "contas", "torneios", "notas"] as const;
-  if (!estado || !listas.every((lista) => Array.isArray(estado[lista])) || !Array.isArray(estado.caixa?.movimentos)) {
+  const camposOk =
+    listas.every((lista) => Array.isArray(estado?.[lista])) &&
+    Array.isArray(estado.caixa?.movimentos) &&
+    [estado.senha, estado.senhaGerente, estado.operador].every((campo) => typeof campo === "string" && campo !== "");
+  if (!camposOk) {
     return erro("O backup está incompleto ou corrompido.");
   }
   gravar(estado);
@@ -746,8 +755,7 @@ const acoes = criarAcoes(
     const resultado = fn(rascunho);
     if (resultado.ok) gravar(rascunho);
     return resultado;
-  },
-  () => gravar(criarSeed())
+  }
 );
 
 const PokerContext = createContext<{ state: PokerState; actions: PokerActions } | null>(null);
@@ -762,6 +770,8 @@ export function PokerDemoProvider({ children }: { children: React.ReactNode }) {
   // localStorage só existe no cliente, então a carga inicial é pós-mount
   useEffect(() => {
     carregar();
+    // pede ao navegador para não apagar os dados quando faltar espaço no aparelho
+    navigator.storage?.persist?.().catch(() => {});
     window.addEventListener("storage", sincronizarComOutraAba);
     return () => window.removeEventListener("storage", sincronizarComOutraAba);
   }, []);
