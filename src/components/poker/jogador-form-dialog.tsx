@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePoker } from "@/lib/poker-demo/store";
-import { PIN_MAX_ERROS, type Jogador } from "@/lib/poker-demo/types";
+import type { Jogador } from "@/lib/poker-demo/types";
 
 function mascararCpf(texto: string): string {
   const d = texto.replace(/\D/g, "").slice(0, 11);
@@ -86,7 +86,6 @@ function JogadorForm({
   const [pin, setPin] = useState("");
   const [senhaGerente, setSenhaGerente] = useState("");
 
-  const pinBloqueado = (jogador?.pinErros ?? 0) >= PIN_MAX_ERROS;
   // trocar um PIN que já existe exige o gerente; criar o primeiro, não
   const trocandoPin = Boolean(jogador?.pin) && pin.length > 0;
 
@@ -195,11 +194,9 @@ function JogadorForm({
         )}
       </div>
       <p className="text-xs text-muted-foreground">
-        {pinBloqueado
-          ? "PIN bloqueado por 3 erros seguidos. Defina um novo PIN com a senha de gerente para liberar."
-          : jogador?.pin
-            ? "O PIN autoriza buy-in, rebuy, add-on e cacife. Trocar exige a senha de gerente."
-            : "O PIN autoriza buy-in, rebuy, add-on e cacife. Sem PIN, o jogador cria um no primeiro lançamento."}
+        {jogador?.pin
+          ? "O PIN autoriza buy-in, rebuy, add-on e cacife. Trocar exige a senha de gerente."
+          : "O PIN autoriza buy-in, rebuy, add-on e cacife. Sem PIN, o jogador cria um no primeiro lançamento."}
       </p>
       <DialogFooter>
         <Button type="button" variant="outline" className="h-11 px-4" onClick={onConcluir}>

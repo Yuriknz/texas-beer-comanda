@@ -10,7 +10,6 @@ import {
   totalLancamento,
 } from "./calc";
 import { criarSeed } from "./seed";
-import { PIN_MAX_ERROS } from "./types";
 import type {
   Conta,
   Credencial,
@@ -27,7 +26,7 @@ import type {
 // Protótipo: o estado inteiro fica no localStorage do aparelho. Todas as regras
 // de negócio estão concentradas aqui para que a troca por Supabase (server
 // actions) depois não exija mexer nas telas.
-const STORAGE_KEY = "wb-poker-demo-v2";
+const STORAGE_KEY = "wb-poker-demo-v3";
 
 const novoId = () => crypto.randomUUID();
 const agora = () => new Date().toISOString();
@@ -90,10 +89,17 @@ function ehDebitoDoTorneio(lancamento: Lancamento, torneio: Torneio): boolean {
   return lancamento.descricao.endsWith(` — ${torneio.nome}`);
 }
 
+/** Buy-in, rebuy, add-on, estorno e prêmio de um torneio (os dados de exemplo não têm torneioId). */
+function ehDoTorneio(lancamento: Lancamento, torneio: Torneio): boolean {
+  if (lancamento.tipo !== "torneio" && lancamento.tipo !== "premio") return false;
+  if (lancamento.torneioId) return lancamento.torneioId === torneio.id;
+  return lancamento.descricao.endsWith(` — ${torneio.nome}`);
+}
+
 /**
  * Débito de jogo (buy-in, rebuy, add-on, cacife) só entra com o PIN do próprio
  * jogador ou com a senha de gerente. Deve rodar antes de qualquer alteração da
- * ação: num PIN errado só a contagem de erros é gravada.
+ * ação. PIN errado não bloqueia: o jogador tenta de novo quantas vezes quiser.
  */
 function autorizar(
   state: PokerState,
@@ -101,7 +107,7 @@ function autorizar(
   credencial: Credencial
 ):
   | { ok: true; auditoria: { autorizadoPor: Autorizacao; operador: string } }
-  | { ok: false; error: string; persistir?: boolean } {
+  | { ok: false; error: string } {
   const jogador = state.jogadores.find((j) => j.id === jogadorId);
   if (!jogador) return erro("Jogador não encontrado.");
   const liberado = (autorizadoPor: Autorizacao) => ({
@@ -117,24 +123,10 @@ function autorizar(
     if (jogador.pin) return erro("Este jogador já tem PIN.");
     if (!PIN_VALIDO.test(credencial.novoPin)) return erro("O PIN precisa ter 4 dígitos.");
     jogador.pin = credencial.novoPin;
-    jogador.pinErros = 0;
     return liberado("pin");
   }
   if (!jogador.pin) return erro("Este jogador ainda não criou o PIN.");
-  if (jogador.pinErros >= PIN_MAX_ERROS) return erro("PIN bloqueado. Chame o gerente para liberar.");
-  if (credencial.pin !== jogador.pin) {
-    jogador.pinErros += 1;
-    const restam = PIN_MAX_ERROS - jogador.pinErros;
-    return {
-      ok: false,
-      persistir: true,
-      error:
-        restam > 0
-          ? `PIN incorreto. ${restam === 1 ? "Resta 1 tentativa" : `Restam ${restam} tentativas`}.`
-          : "PIN incorreto. PIN bloqueado — chame o gerente para liberar.",
-    };
-  }
-  jogador.pinErros = 0;
+  if (credencial.pin !== jogador.pin) return erro("PIN incorreto. Tente de novo.");
   return liberado("pin");
 }
 
@@ -174,7 +166,7 @@ function criarAcoes(
         const pin = dados.pin ?? "";
         if (pin && !PIN_VALIDO.test(pin)) return erro("O PIN precisa ter 4 dígitos.");
         const id = novoId();
-        s.jogadores.push({ ...dados, nome: dados.nome.trim(), pin, pinErros: 0, id, criadoEm: agora() });
+        s.jogadores.push({ ...dados, nome: dados.nome.trim(), pin, id, criadoEm: agora() });
         return { ok: true, id };
       }),
     atualizarJogador: (id: string, dados: DadosJogador) =>
@@ -186,7 +178,7 @@ function criarAcoes(
         return OK;
       }),
 
-    /** Define o PIN. Trocar um PIN que já existe (esquecido ou bloqueado) exige a senha de gerente. */
+    /** Define o PIN. Trocar um PIN que já existe (esquecido) exige a senha de gerente. */
     redefinirPin: (jogadorId: string, novoPin: string, senhaGerente: string) =>
       mutar((s) => {
         const jogador = s.jogadores.find((j) => j.id === jogadorId);
@@ -194,7 +186,6 @@ function criarAcoes(
         if (jogador.pin && senhaGerente !== s.senhaGerente) return erro("Senha de gerente incorreta.");
         if (!PIN_VALIDO.test(novoPin)) return erro("O PIN precisa ter 4 dígitos.");
         jogador.pin = novoPin;
-        jogador.pinErros = 0;
         return OK;
       }),
 
@@ -542,18 +533,28 @@ function criarAcoes(
         inscricao.posicao = undefined;
         return OK;
       }),
-    /** Define o campeão e credita os prêmios nas contas dos jogadores premiados. */
-    encerrarTorneio: (torneioId: string) =>
+    /**
+     * O operador informa quem ficou em cada colocação premiada (campeão primeiro)
+     * e os prêmios são creditados nas contas. Sem eliminação na mesa por enquanto.
+     */
+    encerrarTorneio: (torneioId: string, colocados: string[]) =>
       mutar((s) => {
         const torneio = s.torneios.find((t) => t.id === torneioId);
         if (!torneio || torneio.status !== "em_andamento") return erro("Torneio não está em andamento.");
-        const ativos = torneio.inscricoes.filter((i) => i.status === "ativo");
-        if (ativos.length !== 1) return erro("Elimine os jogadores até restar só o campeão.");
+        const premiados = numeroPremiados(torneio);
         // exclusões depois do início podem deixar menos jogadores que colocações premiadas
-        if (torneio.inscricoes.length < numeroPremiados(torneio)) {
+        if (torneio.inscricoes.length < premiados) {
           return erro("Há mais colocações premiadas que jogadores. Diminua os premiados.");
         }
-        ativos[0].posicao = 1;
+        if (colocados.length !== premiados) return erro(`Escolha os ${premiados} premiados.`);
+        if (new Set(colocados).size !== colocados.length) return erro("Um jogador não pode ter duas colocações.");
+        if (!colocados.every((id) => torneio.inscricoes.some((i) => i.jogadorId === id))) {
+          return erro("Só jogadores inscritos podem ser premiados.");
+        }
+        torneio.inscricoes.forEach((i) => {
+          const indice = colocados.indexOf(i.jogadorId);
+          i.posicao = indice >= 0 ? indice + 1 : undefined;
+        });
         const { premios, percentuais } = resumoTorneio(torneio);
         // congela a premiação sugerida: o histórico não muda mais com a tabela
         torneio.premiacao = percentuais;
@@ -566,10 +567,45 @@ function criarAcoes(
             "premio",
             `Prêmio ${indice + 1}º lugar — ${torneio.nome}`,
             1,
-            -premio
+            -premio,
+            { torneioId: torneio.id }
           );
         });
         torneio.status = "encerrado";
+        return OK;
+      }),
+    /**
+     * Torneio criado errado ou que não aconteceu: some da lista e todo o dinheiro
+     * dele é desfeito. Em conta aberta, buy-in, rebuy, add-on, estorno e prêmio
+     * simplesmente saem. O que já foi acertado em conta fechada vira um lançamento
+     * de acerto na conta aberta: crédito para quem pagou, débito para quem já
+     * recebeu prêmio.
+     */
+    excluirTorneio: (torneioId: string) =>
+      mutar((s) => {
+        const torneio = s.torneios.find((t) => t.id === torneioId);
+        if (!torneio) return erro("Torneio não encontrado.");
+        const acertos = new Map<string, number>();
+        s.contas.forEach((c) => {
+          const doTorneio = c.lancamentos.filter((l) => ehDoTorneio(l, torneio));
+          if (doTorneio.length === 0) return;
+          if (c.status === "fechada") {
+            const liquido = doTorneio.reduce((soma, l) => soma + totalLancamento(l), 0);
+            acertos.set(c.jogadorId, (acertos.get(c.jogadorId) ?? 0) + liquido);
+          } else {
+            c.lancamentos = c.lancamentos.filter((l) => !doTorneio.includes(l));
+          }
+        });
+        acertos.forEach((liquido, jogadorId) => {
+          const valor = Math.round(liquido * 100) / 100;
+          if (valor === 0) return;
+          // torneioId do excluído: nunca casa com outro torneio de mesmo nome
+          lancar(contaDoJogador(s, jogadorId), "torneio", `Acerto do torneio excluído — ${torneio.nome}`, 1, -valor, {
+            operador: s.operador,
+            torneioId: torneio.id,
+          });
+        });
+        s.torneios = s.torneios.filter((t) => t.id !== torneioId);
         return OK;
       }),
 
@@ -646,7 +682,7 @@ const acoes = criarAcoes(
   (fn) => {
     const rascunho = structuredClone(estadoAtual!);
     const resultado = fn(rascunho);
-    if (resultado.ok || resultado.persistir) gravar(rascunho);
+    if (resultado.ok) gravar(rascunho);
     return resultado;
   },
   () => gravar(criarSeed())

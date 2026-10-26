@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Info, Minus, Play, Plus, Trophy, Undo2, UserMinus, UserX } from "lucide-react";
+import { Info, Minus, Play, Plus, Trash2, Trophy, UserMinus, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -42,13 +42,12 @@ const numero = new Intl.NumberFormat("pt-BR");
 export default function TorneioPage() {
   const { torneioId } = useParams<{ torneioId: string }>();
   const { state, actions } = usePoker();
+  const router = useRouter();
   const pedirPin = usePinGate();
-  // Eliminação pede confirmação: um toque errado no tablet muda a classificação.
-  const [eliminando, setEliminando] = useState<string | null>(null);
-  const [confirmando, setConfirmando] = useState(false);
   // Exclusão é para desistência: a inscrição some e o valor sai da conta e do prêmio.
   const [excluindo, setExcluindo] = useState<string | null>(null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [excluindoTorneio, setExcluindoTorneio] = useState(false);
 
   const torneio = state.torneios.find((t) => t.id === torneioId);
 
@@ -107,22 +106,6 @@ export default function TorneioPage() {
     });
   }
 
-  function pedirEliminacao(jogadorId: string) {
-    setEliminando(jogadorId);
-    setConfirmando(true);
-  }
-
-  function confirmarEliminacao() {
-    if (!eliminando || !torneio) return;
-    const resultado = actions.eliminarJogador(torneio.id, eliminando);
-    setConfirmando(false);
-    if (!resultado.ok) {
-      toast.error(resultado.error);
-      return;
-    }
-    toast.success(`${nomeDe(eliminando)} eliminado.`);
-  }
-
   function pedirExclusao(jogadorId: string) {
     setExcluindo(jogadorId);
     setConfirmandoExclusao(true);
@@ -155,14 +138,17 @@ export default function TorneioPage() {
     if (!resultado.ok) toast.error(resultado.error);
   }
 
-  function desfazerEliminacao(jogadorId: string) {
+  function excluirTorneio() {
     if (!torneio) return;
-    const resultado = actions.desfazerEliminacao(torneio.id, jogadorId);
+    const { nome } = torneio;
+    const resultado = actions.excluirTorneio(torneio.id);
+    setExcluindoTorneio(false);
     if (!resultado.ok) {
       toast.error(resultado.error);
       return;
     }
-    toast.success(`Eliminação de ${nomeDe(jogadorId)} desfeita — de volta à disputa.`);
+    toast.success(`Torneio "${nome}" excluído e valores desfeitos nas contas.`);
+    router.push("/poker/torneios");
   }
 
   function iniciar() {
@@ -185,7 +171,6 @@ export default function TorneioPage() {
     { label: "Prêmio líquido", valor: formatCurrency(resumo.premioLiquido), destaque: true },
   ];
 
-  const inscricaoEliminando = torneio.inscricoes.find((i) => i.jogadorId === eliminando);
   const inscricaoExcluindo = torneio.inscricoes.find((i) => i.jogadorId === excluindo);
   const valorExcluindo = inscricaoExcluindo
     ? torneio.buyIn +
@@ -208,6 +193,14 @@ export default function TorneioPage() {
           </Button>
         )}
         {emAndamento && <TorneioEncerrarDialog torneio={torneio} />}
+        <Button
+          variant="ghost"
+          size="lg"
+          className="h-11 px-4 text-muted-foreground"
+          onClick={() => setExcluindoTorneio(true)}
+        >
+          <Trash2 /> Excluir torneio
+        </Button>
       </PageTitle>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
@@ -352,9 +345,7 @@ export default function TorneioPage() {
                   ? "Inscreva pelo menos 2 jogadores para iniciar o torneio."
                   : `${resumo.inscritos} inscritos — pronto para iniciar.`)}
               {emAndamento &&
-                (resumo.ativos === 1
-                  ? "Restou o campeão — encerre o torneio para creditar os prêmios."
-                  : `${resumo.ativos} jogadores na disputa. Elimine até restar o campeão para encerrar.`)}
+                `${resumo.inscritos} jogadores na disputa. No encerramento, toque em quem ficou em cada colocação premiada.`}
               {encerrado && `${resumo.inscritos} participantes.`}
             </p>
           </div>
@@ -445,25 +436,6 @@ export default function TorneioPage() {
                               Add-on
                             </Button>
                           )}
-                          {eliminado && (
-                            <Button
-                              variant="ghost"
-                              className="h-11 flex-1 px-3 sm:flex-none"
-                              onClick={() => desfazerEliminacao(inscricao.jogadorId)}
-                            >
-                              <Undo2 /> Desfazer
-                            </Button>
-                          )}
-                          {emAndamento && !eliminado && (
-                            <Button
-                              variant="destructive"
-                              className="h-11 flex-1 px-3 sm:flex-none"
-                              disabled={resumo.ativos <= 1}
-                              onClick={() => pedirEliminacao(inscricao.jogadorId)}
-                            >
-                              Eliminar
-                            </Button>
-                          )}
                           <Button
                             variant="ghost"
                             className="h-11 flex-1 px-3 text-muted-foreground sm:flex-none"
@@ -483,27 +455,25 @@ export default function TorneioPage() {
         </section>
       </div>
 
-      <Dialog open={confirmando} onOpenChange={setConfirmando}>
+      <Dialog open={excluindoTorneio} onOpenChange={setExcluindoTorneio}>
         <DialogContent>
-          {eliminando && (
-            <>
-              <DialogHeader>
-                <DialogTitle>Eliminar jogador</DialogTitle>
-                <DialogDescription>
-                  Eliminar <Nome>{nomeDe(eliminando)}</Nome> em <Valor>{resumo.ativos}º lugar</Valor>?
-                  {temRebuy && !inscricaoEliminando?.addon && " Ele ainda pode voltar com um rebuy."}
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" className="h-11 px-4" onClick={() => setConfirmando(false)}>
-                  Cancelar
-                </Button>
-                <Button variant="destructive" className="h-11 px-4" onClick={confirmarEliminacao}>
-                  Eliminar
-                </Button>
-              </DialogFooter>
-            </>
-          )}
+          <DialogHeader>
+            <DialogTitle>Excluir torneio</DialogTitle>
+            <DialogDescription>
+              Excluir <Nome>{torneio.nome}</Nome>? Ele some da lista e todo o dinheiro dele é desfeito: buy-in,
+              rebuy e add-on saem das contas abertas
+              {encerrado && " e os prêmios creditados são retirados"}. Se alguém já acertou a conta, a diferença
+              volta como lançamento na conta aberta dele. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" className="h-11 px-4" onClick={() => setExcluindoTorneio(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" className="h-11 px-4" onClick={excluirTorneio}>
+              Excluir torneio
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -516,7 +486,7 @@ export default function TorneioPage() {
                 <DialogDescription>
                   Excluir <Nome>{nomeDe(excluindo)}</Nome> do torneio? Use quando ele desistiu ou não tinha o
                   dinheiro: <Valor>{formatCurrency(valorExcluindo)}</Valor> sai do prêmio e da conta dele. Se ele já
-                  pagou, o valor volta como crédito na conta. Se ele jogou e perdeu, use Eliminar.
+                  pagou, o valor volta como crédito na conta.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>

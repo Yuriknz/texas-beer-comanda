@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePoker } from "@/lib/poker-demo/store";
-import { PIN_MAX_ERROS, type Credencial, type Resultado } from "@/lib/poker-demo/types";
+import type { Credencial, Resultado } from "@/lib/poker-demo/types";
 import { cn } from "@/lib/utils";
 
 type Pedido = {
@@ -72,7 +72,6 @@ function PinForm({ pedido, onSucesso }: { pedido: Pedido; onSucesso: () => void 
   const { state } = usePoker();
   const jogador = state.jogadores.find((j) => j.id === pedido.jogadorId);
   const semPin = !jogador?.pin;
-  const bloqueado = !semPin && (jogador?.pinErros ?? 0) >= PIN_MAX_ERROS;
 
   const [modoGerente, setModoGerente] = useState(false);
   const [digitos, setDigitos] = useState("");
@@ -80,8 +79,6 @@ function PinForm({ pedido, onSucesso }: { pedido: Pedido; onSucesso: () => void 
   const [primeiro, setPrimeiro] = useState<string | null>(null);
   const [senhaGerente, setSenhaGerente] = useState("");
   const [erro, setErro] = useState<string | null>(null);
-
-  const gerente = modoGerente || bloqueado;
 
   function tentar(credencial: Credencial) {
     const resultado = pedido.executar(credencial);
@@ -149,7 +146,7 @@ function PinForm({ pedido, onSucesso }: { pedido: Pedido; onSucesso: () => void 
         </DialogDescription>
       </DialogHeader>
 
-      {gerente ? (
+      {modoGerente ? (
         <form
           className="grid gap-3"
           onSubmit={(event) => {
@@ -158,9 +155,7 @@ function PinForm({ pedido, onSucesso }: { pedido: Pedido; onSucesso: () => void 
           }}
         >
           <p className="text-sm text-muted-foreground">
-            {bloqueado
-              ? "PIN bloqueado por 3 erros seguidos. Só o gerente libera este lançamento."
-              : "Liberação sem o PIN do jogador. Fica registrada como autorizada pelo gerente."}
+            Liberação sem o PIN do jogador. Fica registrada como autorizada pelo gerente.
           </p>
           <div className="grid gap-2">
             <Label htmlFor="pin-senha-gerente">Senha de gerente</Label>
@@ -182,11 +177,9 @@ function PinForm({ pedido, onSucesso }: { pedido: Pedido; onSucesso: () => void 
           <Button type="submit" className="h-12" disabled={!senhaGerente}>
             <ShieldCheck /> Liberar lançamento
           </Button>
-          {!bloqueado && (
-            <Button type="button" variant="ghost" className="h-11" onClick={() => setModoGerente(false)}>
-              Voltar para o PIN do jogador
-            </Button>
-          )}
+          <Button type="button" variant="ghost" className="h-11" onClick={() => setModoGerente(false)}>
+            Voltar para o PIN do jogador
+          </Button>
         </form>
       ) : (
         // tabIndex + onKeyDown: no computador dá para digitar o PIN pelo teclado físico
