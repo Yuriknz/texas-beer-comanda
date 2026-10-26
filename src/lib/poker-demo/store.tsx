@@ -28,6 +28,9 @@ import type {
 // actions) depois não exija mexer nas telas.
 const STORAGE_KEY = "wb-poker-demo-v3";
 
+export const SENHA_EXEMPLO = "1234";
+export const SENHA_GERENTE_EXEMPLO = "9999";
+
 const novoId = () => crypto.randomUUID();
 const agora = () => new Date().toISOString();
 const erro = (error: string) => ({ ok: false as const, error });
@@ -639,6 +642,27 @@ function criarAcoes(
 
     /** Volta aos dados de demonstração originais. */
     resetarDemo: reset,
+
+    /**
+     * Uso de verdade: apaga jogadores, contas, caixa, torneios e notas de exemplo.
+     * Fica o cardápio. As duas senhas são trocadas porque as de exemplo
+     * aparecem na tela de demonstração.
+     */
+    comecarDoZero: (senha: string, senhaGerente: string) =>
+      mutar((s) => {
+        if (senha.length < 4) return erro("A senha do operador precisa de pelo menos 4 caracteres.");
+        if (senha === SENHA_EXEMPLO) return erro("Escolha uma senha do operador diferente da de exemplo.");
+        if (!/^\d{4,}$/.test(senhaGerente)) return erro("A senha de gerente precisa de pelo menos 4 números.");
+        if (senhaGerente === SENHA_GERENTE_EXEMPLO) return erro("Escolha uma senha de gerente diferente da de exemplo.");
+        s.senha = senha;
+        s.senhaGerente = senhaGerente;
+        s.jogadores = [];
+        s.contas = [];
+        s.torneios = [];
+        s.notas = [];
+        s.caixa = { status: "fechado", operador: s.operador, movimentos: [] };
+        return OK;
+      }),
   };
 }
 
@@ -678,6 +702,44 @@ function assinar(ouvinte: () => void) {
   };
 }
 
+/**
+ * Outra aba (ou o app instalado) gravou: passa a valer o estado dela. Sem isso,
+ * a próxima ação desta aba gravaria por cima com o estado antigo e desfaria o
+ * que foi feito na outra (conta fechada voltando a abrir, dinheiro sumindo).
+ */
+function sincronizarComOutraAba(evento: StorageEvent) {
+  if (evento.key !== STORAGE_KEY || !evento.newValue) return;
+  try {
+    estadoAtual = JSON.parse(evento.newValue) as PokerState;
+  } catch {
+    return;
+  }
+  ouvintes.forEach((ouvinte) => ouvinte());
+}
+
+/** Arquivo de backup com tudo o que está neste aparelho. */
+export function exportarBackup(): string {
+  return JSON.stringify({ app: "wb-poker", versao: STORAGE_KEY, salvoEm: agora(), estado: estadoAtual }, null, 2);
+}
+
+/** Troca tudo o que está neste aparelho pelo conteúdo de um backup. */
+export function restaurarBackup(texto: string): Resultado {
+  let estado: PokerState;
+  try {
+    const backup = JSON.parse(texto);
+    if (backup?.app !== "wb-poker") return erro("Esse arquivo não é um backup do WB Poker.");
+    estado = backup.estado;
+  } catch {
+    return erro("Não deu para ler o arquivo de backup.");
+  }
+  const listas = ["jogadores", "produtos", "contas", "torneios", "notas"] as const;
+  if (!estado || !listas.every((lista) => Array.isArray(estado[lista])) || !Array.isArray(estado.caixa?.movimentos)) {
+    return erro("O backup está incompleto ou corrompido.");
+  }
+  gravar(estado);
+  return OK;
+}
+
 const acoes = criarAcoes(
   (fn) => {
     const rascunho = structuredClone(estadoAtual!);
@@ -698,7 +760,11 @@ export function PokerDemoProvider({ children }: { children: React.ReactNode }) {
   );
 
   // localStorage só existe no cliente, então a carga inicial é pós-mount
-  useEffect(carregar, []);
+  useEffect(() => {
+    carregar();
+    window.addEventListener("storage", sincronizarComOutraAba);
+    return () => window.removeEventListener("storage", sincronizarComOutraAba);
+  }, []);
 
   const valor = useMemo(() => (state ? { state, actions: acoes } : null), [state]);
 

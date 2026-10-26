@@ -14,16 +14,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { parseValor } from "@/components/poker/caixa-valor-input";
 import { usePoker } from "@/lib/poker-demo/store";
 import type { Produto } from "@/lib/poker-demo/types";
 
-/** Aceita "12,50" e "12.50"; devolve null quando não é um preço válido. */
+/** Aceita "12,50", "12.50" e "1.000"; devolve null quando não é um preço válido. */
 function lerPreco(texto: string): number | null {
-  const limpo = texto.trim().replace(",", ".");
-  if (!limpo) return null;
-  const valor = Number(limpo);
-  if (!Number.isFinite(valor) || valor < 0) return null;
-  return Math.round(valor * 100) / 100;
+  if (!texto.trim()) return null;
+  const valor = parseValor(texto);
+  return Number.isNaN(valor) ? null : valor;
 }
 
 function ProdutoForm({

@@ -28,7 +28,7 @@ const MENU: { href: string; label: string; icon: LucideIcon; destaque?: "sair" }
   { href: "/poker/cacifes", label: "Cacifes", icon: CircleDollarSign },
   { href: "/poker/torneios", label: "Torneios", icon: Trophy },
   { href: "/poker/nota-fiscal", label: "Nota Fiscal", icon: ReceiptText },
-  { href: "/poker/senha", label: "Senha", icon: KeyRound },
+  { href: "/poker/senha", label: "Senha e backup", icon: KeyRound },
   { href: "/poker/sair", label: "Sair", icon: LogOut, destaque: "sair" },
 ];
 

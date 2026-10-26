@@ -2,21 +2,12 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Eye, EyeOff, RotateCcw } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DadosAparelhoCard } from "@/components/poker/dados-aparelho-card";
 import { PageTitle } from "@/components/poker/page-title";
 import { usePoker } from "@/lib/poker-demo/store";
 
@@ -28,7 +19,6 @@ export default function SenhaPage() {
   const [nova, setNova] = useState("");
   const [confirmacao, setConfirmacao] = useState("");
   const [mostrar, setMostrar] = useState(false);
-  const [resetAberto, setResetAberto] = useState(false);
 
   const novaCurta = nova !== "" && nova.length < TAMANHO_MINIMO;
   const novaIgual = nova !== "" && nova === atual;
@@ -50,28 +40,24 @@ export default function SenhaPage() {
     setConfirmacao("");
   }
 
-  function restaurar() {
-    actions.resetarDemo();
-    setResetAberto(false);
-    setAtual("");
-    setNova("");
-    setConfirmacao("");
-    toast.success("Dados de exemplo restaurados.");
-  }
-
   const tipo = mostrar ? "text" : "password";
 
   return (
     <>
-      <PageTitle title="Senha" description={`Troca da senha do operador ${state.operador}.`} />
+      <PageTitle title="Senha e backup" description={`Senha do operador ${state.operador} e os dados deste aparelho.`} />
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Alterar senha</CardTitle>
             <CardDescription>
-              Mínimo de {TAMANHO_MINIMO} caracteres. A senha de demonstração é{" "}
-              <span className="font-money text-foreground">1234</span>.
+              Mínimo de {TAMANHO_MINIMO} caracteres.
+              {state.senha === "1234" && (
+                <>
+                  {" "}
+                  A senha de demonstração é <span className="font-money text-foreground">1234</span>.
+                </>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -139,37 +125,7 @@ export default function SenhaPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Dados de demonstração</CardTitle>
-            <CardDescription>
-              Recomeça a apresentação do zero: jogadores, contas, caixa, torneios, notas e produtos voltam ao
-              exemplo original, e a senha volta a ser 1234.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Dialog open={resetAberto} onOpenChange={setResetAberto}>
-              <DialogTrigger render={<Button variant="outline" className="h-11 w-full px-4 sm:w-auto" />}>
-                <RotateCcw /> Restaurar dados de exemplo
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Restaurar dados de exemplo?</DialogTitle>
-                  <DialogDescription>
-                    Tudo o que foi lançado neste aparelho durante a demonstração será apagado. Esta ação não
-                    pode ser desfeita.
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <DialogClose render={<Button variant="outline" className="h-11 px-4" />}>Cancelar</DialogClose>
-                  <Button variant="destructive" className="h-11 px-4" onClick={restaurar}>
-                    Restaurar
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </CardContent>
-        </Card>
+        <DadosAparelhoCard />
       </div>
     </>
   );

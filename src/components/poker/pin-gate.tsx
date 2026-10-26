@@ -1,12 +1,12 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { Delete, ShieldCheck } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { usePoker } from "@/lib/poker-demo/store";
+import { SENHA_GERENTE_EXEMPLO, usePoker } from "@/lib/poker-demo/store";
 import type { Credencial, Resultado } from "@/lib/poker-demo/types";
 import { cn } from "@/lib/utils";
 
@@ -79,10 +79,15 @@ function PinForm({ pedido, onSucesso }: { pedido: Pedido; onSucesso: () => void 
   const [primeiro, setPrimeiro] = useState<string | null>(null);
   const [senhaGerente, setSenhaGerente] = useState("");
   const [erro, setErro] = useState<string | null>(null);
+  // o diálogo leva um instante para fechar: um toque a mais no último dígito
+  // não pode lançar de novo
+  const autorizado = useRef(false);
 
   function tentar(credencial: Credencial) {
+    if (autorizado.current) return;
     const resultado = pedido.executar(credencial);
     if (resultado.ok) {
+      autorizado.current = true;
       onSucesso();
       return;
     }
@@ -246,9 +251,11 @@ function PinForm({ pedido, onSucesso }: { pedido: Pedido; onSucesso: () => void 
         </div>
       )}
 
-      <p className="text-center text-xs text-muted-foreground">
-        Demonstração: PIN dos jogadores de exemplo 1111 · gerente 9999
-      </p>
+      {state.senhaGerente === SENHA_GERENTE_EXEMPLO && (
+        <p className="text-center text-xs text-muted-foreground">
+          Demonstração: PIN dos jogadores de exemplo 1111 · gerente 9999
+        </p>
+      )}
     </>
   );
 }

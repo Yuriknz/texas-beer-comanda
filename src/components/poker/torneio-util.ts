@@ -1,3 +1,4 @@
+import { parseValor } from "@/components/poker/caixa-valor-input";
 import { resumoTorneio } from "@/lib/poker-demo/calc";
 import type { Torneio } from "@/lib/poker-demo/types";
 
@@ -27,8 +28,7 @@ export function premiosPorJogador(torneio: Torneio, campeaoId?: string): Map<str
   return mapa;
 }
 
-/** Aceita vírgula decimal, como o operador digita no teclado brasileiro. */
+/** Aceita vírgula decimal e ponto de milhar ("10.000" fichas), como o operador digita no teclado brasileiro. */
 export function parseNumero(texto: string): number {
-  const limpo = texto.trim().replace(",", ".");
-  return limpo === "" ? Number.NaN : Number(limpo);
+  return texto.trim() === "" ? Number.NaN : parseValor(texto);
 }

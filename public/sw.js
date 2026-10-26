@@ -1,5 +1,6 @@
-const CACHE_NAME = "texas-beer-v1";
-const PRECACHE_URLS = ["/", "/manifest.json", "/icon.svg"];
+const CACHE_NAME = "wb-poker-v1";
+// "/" passa pelo login (Supabase); o app instalado abre direto em /poker
+const PRECACHE_URLS = ["/poker", "/manifest.json", "/wb-poker-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -29,8 +30,11 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        // resposta redirecionada não pode servir uma navegação depois (o navegador recusa)
+        if (response.ok && !response.redirected) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))

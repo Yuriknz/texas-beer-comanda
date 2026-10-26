@@ -23,15 +23,16 @@ export const metadata: Metadata = {
   title: "Texas Beer — Comanda",
   description: "Sistema de comanda e emissão de nota fiscal do Texas Beer",
   manifest: "/manifest.json",
+  icons: { icon: "/wb-poker-192.png", apple: "/apple-touch-icon.png" },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Texas Beer",
+    statusBarStyle: "black",
+    title: "WB Poker",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0c1e17",
+  themeColor: "#0d0d0d",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { parseValor } from "@/components/poker/caixa-valor-input";
 import { usePinGate } from "@/components/poker/pin-gate";
 import { usePoker } from "@/lib/poker-demo/store";
 import { formatCurrency } from "@/lib/format";
@@ -38,12 +39,10 @@ const TEXTOS = {
   },
 };
 
-/** Aceita "50", "50,5" e "1.250,00" (vírgula decimal, ponto de milhar). */
+/** Aceita "50", "50,5", "1.250,00" e "1.000" (ponto de milhar), como no caixa. */
 function lerValor(texto: string): number {
-  const limpo = texto.replace(/[^\d,.]/g, "");
-  const normalizado = limpo.includes(",") ? limpo.replace(/\./g, "").replace(",", ".") : limpo;
-  const valor = Number(normalizado);
-  return Number.isFinite(valor) ? Math.round(valor * 100) / 100 : 0;
+  const valor = parseValor(texto.replace(/[^\d,.]/g, ""));
+  return Number.isNaN(valor) ? 0 : valor;
 }
 
 export function ContaValorDialog({
